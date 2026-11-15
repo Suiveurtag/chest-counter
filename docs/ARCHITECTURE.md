@@ -115,7 +115,10 @@ closes, so it never outlives the shell, even a killed one. It opens Explorer its
   are re-applied on every `settings` change. Window size and position: window-state plugin.
 - `overlay.rs` + `web/src/overlay.ts`: a transparent, always-on-top, `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` window
   showing `overlay.html` from the engine. The page draws the figures and reports its size. The shell places the
-  window, shows it without activating it, and ignores the mouse when locked so clicks reach the game. Drag, wheel
+  window, shows it without activating it, and ignores the mouse when locked so clicks reach the game. The feed also
+  says whether a match is being recorded (`live`) or its replay read (`reading`), and carries the latest match with
+  its treasures: the page shows the state of play, rolls its figures, and shows an end-of-match card when a match it
+  saw being played is counted. Drag, wheel
   and right-click on the page go back to the shell as commands; only those are allowed to that remote origin
   (`capabilities/overlay.json`). The main window gets no Tauri access.
 - `startup.rs`: the per-user Run key for "start with Windows". "Start with Fortnite" registers a windowless

@@ -65,8 +65,14 @@ public sealed record TimelinePoint(string Date, int Chests, int Matches, int Amm
 
 public sealed record OverlayMember(string Name, int Chests, int? LastMatch, bool Online);
 
+/// <param name="Live">Fortnite is recording a match right now (a replay flagged live): a match is in progress.</param>
+/// <param name="Reading">A match has just ended and its replay is settling or being read.</param>
+/// <param name="LastMatchId">The player's latest counted match: the overlay celebrates when it changes.</param>
+/// <param name="LastTreasures">Treasures of that match (the player's own first, then teammates').</param>
 public sealed record OverlayData(int Personal, int? Squad, string SquadScope, int Session, int? LastMatch, bool LastMatchPartial,
-    List<OverlayMember> Members, string? PlayerName, string? SquadName, OverlaySettings Settings);
+    List<OverlayMember> Members, string? PlayerName, string? SquadName, OverlaySettings Settings,
+    bool Live = false, bool Reading = false, string? LastMatchId = null, int? LastChests = null, int? LastPlacement = null,
+    int? LastTotalPlayers = null, int? LastEliminations = null, List<TreasureTag>? LastTreasures = null);
 
 public sealed record Diagnostics(Dictionary<string, int> FileCounts, List<FileRow> Problems, List<MatchSummary> NotCounted, List<LogRow> Log,
     List<OutboxRow> RefusedUploads, string DatabasePath, long DatabaseBytes);
@@ -445,6 +451,10 @@ public sealed class ChestEngine : IDisposable
         var lastShared = squad?.SharedMatches.FirstOrDefault(s => s.Status != SharedMatchStatus.Ambiguous);
         // "Last match": the latest shared squad match when it is this player's latest match too, else their own.
         var useShared = lastShared != null && totals.LastMatch != null && lastShared.MatchId == totals.LastMatch.MatchId;
+        var tracking = Tracker.Status;
+        var live = tracking.Pending.Any(p => p.Reason == PendingReason.Recording);
+        var reading = tracking.State == "scanning" || tracking.Pending.Any(p => p.Reason == PendingReason.Settling);
+        var last = totals.LastMatch;
         return new OverlayData(
             totals.Chests + totals.ManualChests,
             squad == null ? null : settings.SquadScope == "shared" ? squad.SharedChests : squad.CombinedMemberChests,
@@ -454,7 +464,9 @@ public sealed class ChestEngine : IDisposable
             useShared && lastShared!.Status == SharedMatchStatus.Partial,
             squad?.Members.Select(m => new OverlayMember(m.DisplayName, settings.SquadScope == "shared" ? m.SharedChests : m.LifetimeChests,
                 useShared ? lastShared!.Contributions.FirstOrDefault(c => c.UserId == m.UserId)?.Chests : null, m.Online)).ToList() ?? new(),
-            profile?.Name, squad?.Name, settings);
+            profile?.Name, squad?.Name, settings,
+            live, reading, last?.MatchId, last?.Chests, last?.Placement, last?.TotalPlayers, last?.Eliminations,
+            last == null ? new() : Treasures.Tags(Db.GetMatchDetail(last.MatchId), Hunt.Catalog));
     }
 
     public Diagnostics GetDiagnostics()
