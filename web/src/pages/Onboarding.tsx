@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck, Package } from 'lucide-react';
+import { CircleAlert, CircleCheck } from 'lucide-react';
+import logo from '../logo.png';
 import { api } from '../api';
 import { useLocale } from '../i18n';
 import { Count, Seg } from '../parts';
@@ -27,7 +28,7 @@ export function Onboarding({ state, patch, go }: PageProps) {
   return (
     <div className="onb shell" style={{ display: 'grid', gridTemplateColumns: '1fr' }}>
       <div className="onb-card">
-        <div className="brand" style={{ padding: 0 }}><Package size={24} strokeWidth={2.2} /><div>Chest Counter<span>Squad</span></div>
+        <div className="brand" style={{ padding: 0 }}><img src={logo} alt="" /><div>Chest Counter<span>Squad</span></div>
           <div style={{ marginLeft: 'auto' }}><Seg value={state.settings.language} onChange={(v) => patch({ language: v })} options={[['en', 'English'], ['fr', 'Français']]} /></div>
         </div>
         <div className="steps">

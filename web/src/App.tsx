@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Home as HomeIcon, List, Package, Settings as SettingsIcon, Users } from 'lucide-react';
+import { BarChart3, Home as HomeIcon, List, Settings as SettingsIcon, Users } from 'lucide-react';
+import logo from './logo.png';
 import { api, useLive, type AppState } from './api';
 import { LocaleContext, makeLocale, useLocale, type Key } from './i18n';
 import { Home } from './pages/Home';
@@ -60,7 +61,7 @@ export function App() {
     <LocaleContext.Provider value={locale}>
       <div className="shell">
         <aside className="rail">
-          <div className="brand"><Package size={24} strokeWidth={2.2} /><div>Chest Counter<span>Squad</span></div></div>
+          <div className="brand"><img src={logo} alt="" /><div>Chest Counter<span>Squad</span></div></div>
           <nav className="nav">
             {pages.map(([id, key, Icon]) => (
               <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => setPage(id)}>
