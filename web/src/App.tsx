@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { BarChart3, Gem, Home as HomeIcon, List, Settings as SettingsIcon, Users } from 'lucide-react';
 import logo from './logo.png';
@@ -57,6 +57,20 @@ export function App() {
     main.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Single sliding indicator measured from the active button: moves in y/height only, so it never gets scale-distorted.
+  const navRef = useRef<HTMLElement>(null);
+  const [pill, setPill] = useState<{ y: number; h: number } | null>(null);
+  const navReady = !!state?.settings.onboardingDone;
+  useLayoutEffect(() => {
+    const measure = () => {
+      const btn = navRef.current?.querySelector<HTMLElement>('button[aria-current="page"]');
+      if (btn) setPill((p) => (p && p.y === btn.offsetTop && p.h === btn.offsetHeight ? p : { y: btn.offsetTop, h: btn.offsetHeight }));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [page, navReady]);
+
   if (!state) {
     return <div className="boot"><img src={logo} alt="" /><i /></div>;
   }
@@ -75,11 +89,11 @@ export function App() {
         <div className="shell">
           <motion.aside className="rail" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.7, ease: easeOut }}>
             <div className="brand"><img src={logo} alt="" /><div>Chest Counter<span>Squad</span></div></div>
-            <nav className="nav">
+            <nav className="nav" ref={navRef}>
+              {pill && <motion.span className="nav-pill" initial={false} animate={{ y: pill.y, height: pill.h }} transition={{ type: 'spring', stiffness: 380, damping: 32 }} />}
               {pages.map(([id, key, Icon], i) => (
                 <motion.button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => go(id)}
                   initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + i * 0.05, duration: 0.5, ease: easeOut }}>
-                  {page === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ type: 'spring', stiffness: 380, damping: 32 }} />}
                   <Icon size={18} className="nav-icon" /><span>{locale.t(key)}</span>
                   {id === 'squad' && squadActivity && <i className="dot" title={locale.t('squad.online')} />}
                   {id === 'treasures' && state.totals.treasures > 0 && <i className="nav-count">{state.totals.treasures}</i>}
@@ -94,18 +108,16 @@ export function App() {
             </div>
           </motion.aside>
           <main className="main" ref={main}>
-            <AnimatePresence mode="wait">
-              <motion.div key={page} className="page-frame"
-                initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, y: -10, filter: 'blur(6px)', transition: { duration: 0.18 } }} transition={{ duration: 0.5, ease: easeOut }}>
-                {page === 'home' && <Home {...props} />}
-                {page === 'treasures' && <Treasures {...props} />}
-                {page === 'squad' && <SquadPage {...props} />}
-                {page === 'matches' && <Matches {...props} />}
-                {page === 'insights' && <Insights {...props} />}
-                {page === 'settings' && <Settings {...props} />}
-              </motion.div>
-            </AnimatePresence>
+            {/* No exit animation / mode="wait": a stalled exit (rapid clicks, hidden window) used to leave the next page unmounted = blank tab. */}
+            <motion.div key={page} className="page-frame"
+              initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: easeOut }}>
+              {page === 'home' && <Home {...props} />}
+              {page === 'treasures' && <Treasures {...props} />}
+              {page === 'squad' && <SquadPage {...props} />}
+              {page === 'matches' && <Matches {...props} />}
+              {page === 'insights' && <Insights {...props} />}
+              {page === 'settings' && <Settings {...props} />}
+            </motion.div>
           </main>
         </div>
       </MotionConfig>
