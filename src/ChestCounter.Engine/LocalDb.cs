@@ -365,6 +365,11 @@ public sealed class LocalDb : IDisposable
         "SELECT COALESCE(SUM(COALESCE(json_array_length(detail_json, '$.treasures'), 0)), 0) FROM matches WHERE profile_key=$pk AND counted=1",
         ("$pk", profileKey)) ?? 0);
 
+    /// <summary>Treasures teammates received in this player's counted matches (as their replays saw them).</summary>
+    public int TeamTreasureCount(string profileKey) => Convert.ToInt32(Scalar(
+        "SELECT COALESCE(SUM(COALESCE(json_extract(detail_json, '$.teamTreasures'), 0)), 0) FROM matches WHERE profile_key=$pk AND counted=1",
+        ("$pk", profileKey)) ?? 0);
+
     private static MatchDetail? ReadDetail(string? json)
     {
         if (json == null) return null;

@@ -16,11 +16,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource/barlow-condensed/600.css';
+import '@fontsource/barlow-condensed/700-italic.css';
+import '@fontsource/barlow-condensed/800-italic.css';
 import './overlay.css';
 
+type ItemKey = 'personal' | 'squad' | 'squadShared' | 'session' | 'last' | 'treasures' | 'teamTreasures';
 interface OverlaySettings {
-  enabled: boolean; locked: boolean; opacity: number; scale: number; showPersonal: boolean; showSquad: boolean;
-  showSession: boolean; showLastMatch: boolean; showMembers: boolean;
+  enabled: boolean; locked: boolean; opacity: number; scale: number; showMembers: boolean;
+  theme?: 'aurora' | 'rift'; layout?: 'row' | 'column' | 'compact'; items?: ItemKey[]; showIcons?: boolean;
+  showStatus?: boolean; showResult?: boolean; resultSeconds?: number;
 }
 interface OverlayMember { name: string; chests: number; online: boolean }
 interface TreasureTag { kind: string; item?: string | null; name?: string | null; prizeKey?: string | null; golden: boolean; team: boolean }
@@ -29,13 +34,18 @@ interface OverlayData {
   lastMatchPartial: boolean; members: OverlayMember[]; settings: OverlaySettings;
   live?: boolean; reading?: boolean; lastMatchId?: string | null; lastChests?: number | null; lastPlacement?: number | null;
   lastTotalPlayers?: number | null; lastEliminations?: number | null; lastTreasures?: TreasureTag[] | null;
+  treasures?: number; teamTreasures?: number; squadCombined?: number | null; squadShared?: number | null;
 }
+
+/** Inside the Settings page: a live sample, driven by messages from the page, never by the mouse. */
+const preview = new URLSearchParams(location.search).has('preview');
 
 // ---- words ----------------------------------------------------------------------------------------------------
 
 const WORDS = {
   en: {
     chests: 'Chests', squad: 'Squad', together: 'Squad together', session: 'Session', last: 'Last match',
+    treasures: 'Treasures', teamTreasures: 'Squad treasures',
     live: 'Match in progress', reading: 'Reading the replay', over: 'Match over', victory: 'Victory Royale',
     chestsWord: 'chests', chestWord: 'chest', elims: '{n} elim.', elim: '1 elim.', total: 'total {n}',
     loot: 'Treasures', noLoot: 'No treasure this time', team: 'team',
@@ -47,6 +57,7 @@ const WORDS = {
   },
   fr: {
     chests: 'Coffres', squad: 'Escouade', together: 'Escouade ensemble', session: 'Session', last: 'Dernière partie',
+    treasures: 'Trésors', teamTreasures: 'Trésors escouade',
     live: 'Partie en cours', reading: 'Lecture du replay', over: 'Partie terminée', victory: 'Victoire royale',
     chestsWord: 'coffres', chestWord: 'coffre', elims: '{n} élim.', elim: '1 élim.', total: 'total {n}',
     loot: 'Trésors', noLoot: 'Pas de trésor cette fois', team: 'équipe',
@@ -88,11 +99,14 @@ const ICON = {
   session: '<path d="M12 3c1 3.5 5 5.4 5 10a5 5 0 0 1-10 0c0-2.3 1.1-3.6 2.2-4.8.2 1.6.9 2.6 1.9 3C10.6 8.2 11.2 5.5 12 3z"/>',
   last: '<path d="M6 21V4h1v1.2C9.3 4 11 4.6 12.6 5.3c1.7.7 3.3 1.2 5.4.2v8.3c-2.1 1-3.7.5-5.4-.2C11 12.9 9.3 12.3 7 13.5V21z"/>',
   gem: '<path d="M7 4h10l4 5-9 11L3 9z"/><path d="M3 9h18M9 4l3 5 3-5M12 9v11" class="facet"/>',
+  gems: '<path d="M4.5 7h7l2.5 3.2L8 17 2 10.2z"/><path d="M13.5 9.5h6L22 12.6l-6 6.9-3.4-3.9 3.5-4z" opacity=".75"/>',
   crown: '<path d="M3 8l4.5 3.5L12 5l4.5 6.5L21 8l-2 10H5z"/>',
 };
 
 // ---- rolling numbers ------------------------------------------------------------------------------------------
 
+/** How long figures take to roll: the Rift look is snappier. */
+let tempo = 1;
 const rolling = new Set<Odometer>();
 let rollFrame = 0;
 function rollTick(now: number) {
@@ -150,7 +164,7 @@ class Odometer {
     this.target = v;
     this.start = performance.now();
     const delta = Math.abs(v - this.from);
-    this.duration = Math.max(minDuration, Math.min(2400, 650 + 230 * Math.log2(1 + delta)));
+    this.duration = Math.max(minDuration, Math.min(2400, 650 + 230 * Math.log2(1 + delta))) * tempo;
     this.build(Math.max(digitCount(this.from), digitCount(v)), sep);
     rolling.add(this);
     if (!rollFrame) rollFrame = requestAnimationFrame(rollTick);
@@ -297,24 +311,31 @@ hud.append(status, stats);
 const crew = el('div', 'crew');
 root.append(hud, crew);
 
-type CellKey = 'personal' | 'squad' | 'session' | 'last';
+type CellKey = ItemKey;
 interface Cell { el: HTMLElement; label: HTMLElement; odo: Odometer }
 const cells = new Map<CellKey, Cell>();
-const CELL_ORDER: CellKey[] = ['personal', 'squad', 'session', 'last'];
-const CELL_STYLE: Record<CellKey, { color: string; icon: string }> = {
-  personal: { color: 'gold', icon: ICON.chest },
-  squad: { color: 'cyan', icon: ICON.squad },
-  session: { color: 'pink', icon: ICON.session },
-  last: { color: 'text', icon: ICON.last },
+
+/** Every figure the overlay can show: its colour, its icon, its words and where its value comes from. */
+const ITEMS: Record<ItemKey, { color: string; icon: string; label: () => string; value: (d: OverlayData) => number | null | undefined; suffix?: (d: OverlayData) => string }> = {
+  personal: { color: 'gold', icon: ICON.chest, label: () => T('chests'), value: (d) => d.personal },
+  squad: { color: 'cyan', icon: ICON.squad, label: () => T('squad'), value: (d) => d.squadCombined ?? (d.squadScope === 'shared' ? undefined : d.squad) },
+  squadShared: { color: 'teal', icon: ICON.squad, label: () => T('together'), value: (d) => d.squadShared ?? (d.squadScope === 'shared' ? d.squad : undefined) },
+  session: { color: 'pink', icon: ICON.session, label: () => T('session'), value: (d) => d.session },
+  // "+" = some teammates have not uploaded this match yet: the figure can still grow.
+  last: { color: 'text', icon: ICON.last, label: () => T('last'), value: (d) => d.lastMatch ?? null, suffix: (d) => (d.lastMatchPartial ? '+' : '') },
+  treasures: { color: 'violet', icon: ICON.gem, label: () => T('treasures'), value: (d) => d.treasures ?? 0 },
+  teamTreasures: { color: 'mint', icon: ICON.gems, label: () => T('teamTreasures'), value: (d) => d.teamTreasures ?? 0 },
 };
+const DEFAULT_ITEMS: ItemKey[] = ['personal', 'squad', 'session', 'last'];
 
 function cell(key: CellKey): Cell {
   let c = cells.get(key);
   if (!c) {
-    const box = el('div', `cell ${CELL_STYLE[key].color}`);
+    const box = el('div', `cell ${ITEMS[key].color}`);
+    box.dataset.item = key;
     const head = el('div', 'cell-head');
     const label = el('span', 'label');
-    head.append(svg(CELL_STYLE[key].icon), label);
+    head.append(svg(ITEMS[key].icon), label);
     const odo = new Odometer();
     odo.el.classList.add('value');
     box.append(head, odo.el);
@@ -341,47 +362,69 @@ let previous: OverlayData | null = null;
 let liveSeenAt = 0;
 let mode: 'idle' | 'live' | 'reading' = 'idle';
 
+let theme = '';
+let forcedMode: { mode: 'live' | 'reading'; until: number } | null = null;
+
+function applyLook(s: OverlaySettings) {
+  const nextTheme = s.theme === 'rift' ? 'rift' : 'aurora';
+  if (nextTheme !== theme) {
+    theme = nextTheme;
+    root.classList.remove('theme-aurora', 'theme-rift');
+    root.classList.add(`theme-${theme}`);
+    tempo = theme === 'rift' ? 0.7 : 1;
+    // The look changed under the cards: play their entrance again.
+    for (const c of cells.values()) { c.el.style.animation = 'none'; void c.el.offsetWidth; c.el.style.animation = ''; }
+  }
+  const layout = s.layout === 'column' || s.layout === 'compact' ? s.layout : 'row';
+  root.classList.remove('layout-row', 'layout-column', 'layout-compact');
+  root.classList.add(`layout-${layout}`);
+  root.classList.toggle('no-icons', s.showIcons === false);
+}
+
+function setMode(next: 'idle' | 'live' | 'reading', showStatus: boolean) {
+  if (next !== mode) {
+    mode = next;
+    if (mode === 'live') dismissResult();
+  }
+  hud.classList.toggle('is-live', mode === 'live');
+  hud.classList.toggle('is-reading', mode === 'reading');
+  status.classList.toggle('shown', mode !== 'idle' && showStatus);
+  statusText.textContent = mode === 'live' ? T('live') : mode === 'reading' ? T('reading') : '';
+}
+
 function render(d: OverlayData) {
   const s = d.settings;
   const first = previous == null;
-  locked = s.locked;
+  locked = s.locked || preview;
   document.documentElement.style.setProperty('--k', String(Math.min(250, Math.max(60, s.scale)) / 100));
   root.style.opacity = String(Math.min(100, Math.max(20, s.opacity)) / 100);
-  root.classList.toggle('unlocked', !s.locked);
+  root.classList.toggle('unlocked', !locked);
   document.documentElement.lang = language;
+  applyLook(s);
 
   // State of play.
   if (d.live) liveSeenAt = Date.now();
   const nextMode = d.live ? 'live' : d.reading && Date.now() - liveSeenAt < 30 * 60_000 ? 'reading' : 'idle';
-  if (nextMode !== mode) {
-    mode = nextMode;
-    hud.classList.toggle('is-live', mode === 'live');
-    hud.classList.toggle('is-reading', mode === 'reading');
-    status.classList.toggle('shown', mode !== 'idle');
-    if (mode === 'live') dismissResult();
-  }
-  statusText.textContent = mode === 'live' ? T('live') : mode === 'reading' ? T('reading') : '';
+  setMode(forcedMode && forcedMode.until > Date.now() ? forcedMode.mode : nextMode, s.showStatus !== false);
 
-  // The figures.
-  const wanted: [CellKey, string, number | null, string][] = [];
-  if (s.showPersonal) wanted.push(['personal', T('chests'), d.personal, '']);
-  if (s.showSquad && d.squad != null) wanted.push(['squad', d.squadScope === 'shared' ? T('together') : T('squad'), d.squad, '']);
-  if (s.showSession) wanted.push(['session', T('session'), d.session, '']);
-  // "+" = some teammates have not uploaded this match yet: the figure can still grow.
-  if (s.showLastMatch) wanted.push(['last', T('last'), d.lastMatch ?? null, d.lastMatchPartial ? '+' : '']);
-  const keep = new Set(wanted.map((w) => w[0]));
+  // The figures, in the chosen order. A squad figure without a squad is left out.
+  const wanted = (s.items ?? DEFAULT_ITEMS).filter((k): k is ItemKey => k in ITEMS)
+    .map((key) => ({ key, value: ITEMS[key].value(d), suffix: ITEMS[key].suffix?.(d) ?? '' }))
+    .filter((w) => w.value !== undefined);
+  const keep = new Set(wanted.map((w) => w.key));
   for (const [key, c] of cells) if (!keep.has(key)) { c.el.remove(); cells.delete(key); }
-  for (const [key, label, value, suffix] of wanted) {
+  for (const { key, value, suffix } of wanted) {
     const c = cell(key);
-    c.label.textContent = label;
+    c.label.textContent = ITEMS[key].label();
     const before = c.odo.value;
     const isNew = !c.el.isConnected;
-    c.odo.set(value, suffix, !first && !isNew);
+    c.odo.set(value ?? null, suffix, !first && !isNew);
     if (!first && !isNew && before != null && value != null && value > before && key !== 'last') bump(c.el, value - before);
   }
-  const ordered = CELL_ORDER.filter((k) => cells.has(k)).map((k) => cells.get(k)!.el);
-  if (ordered.some((e, i) => stats.children[i] !== e)) stats.replaceChildren(...ordered);
-  hud.hidden = cells.size === 0 && mode === 'idle';
+  const ordered = wanted.map((w) => cells.get(w.key)!.el);
+  ordered.forEach((e, i) => e.style.setProperty('--i', String(i)));
+  if (ordered.length !== stats.children.length || ordered.some((e, i) => stats.children[i] !== e)) stats.replaceChildren(...ordered);
+  hud.hidden = cells.size === 0 && (mode === 'idle' || s.showStatus === false);
 
   // The squad, member by member.
   const members = s.showMembers ? d.members : [];
@@ -412,7 +455,7 @@ function render(d: OverlayData) {
   // A new match was counted while the player was seen playing: celebrate it.
   if (!first && d.lastMatchId && d.lastMatchId !== previous!.lastMatchId && Date.now() - liveSeenAt < 60 * 60_000) {
     liveSeenAt = 0; // one card per match
-    showResult(d);
+    if (s.showResult !== false) showResult(d);
   }
   previous = d;
   reportSize();
@@ -433,7 +476,9 @@ function treasureName(tag: TreasureTag): { name: string; kind?: string } {
 }
 
 function lootRow(tag: TreasureTag): HTMLElement {
-  const row = el('div', `loot${tag.golden ? ' golden' : ''}${tag.team ? ' team' : ''}`);
+  // A rarity, for the Rift look's coloured tiles: golden chest prizes are the top tier, gizmos next.
+  const rarity = tag.golden ? 'legendary' : tag.kind === 'gizmo' ? 'rare' : 'epic';
+  const row = el('div', `loot rarity-${rarity}${tag.golden ? ' golden' : ''}${tag.team ? ' team' : ''}`);
   const thumb = el('span', 'thumb');
   if (tag.prizeKey) {
     const img = el('img');
@@ -502,7 +547,7 @@ function showResult(d: OverlayData) {
   else loot.append(...lootRows);
 
   const timer = el('div', 'r-timer');
-  const linger = 14_000 + 1_400 * treasures.length;
+  const linger = (d.settings.resultSeconds ?? 14) * 1000 + 1_200 * treasures.length;
   timer.style.animationDuration = `${linger}ms`;
 
   card.append(confetti.canvas, head, gain, sub, loot, timer);
@@ -516,14 +561,21 @@ function showResult(d: OverlayData) {
     confetti.burst(b.left - c.left + b.width / 2, b.top - c.top + b.height / 2, count, colors, power);
   };
 
-  // The card lands, the chests roll up, then the treasures come in one by one.
-  at(380, () => {
+  // The card lands, the chests roll up, then the treasures come in one by one. The Rift look keeps a faster beat
+  // and the menus' colours (yellow, blue, purple).
+  const rift = theme === 'rift';
+  const beat = rift ? 0.7 : 1;
+  const gainColors = rift
+    ? (victory ? ['#fff23a', '#ffffff', '#3d8bff', '#b45bff'] : ['#fff23a', '#3d8bff', '#ffffff'])
+    : (victory ? ['#f3c96b', '#ffe7a8', '#fff6dc', '#f593c9'] : ['#f3c96b', '#ffe7a8', '#9d8cff']);
+  const goldColors = rift ? ['#ffb627', '#fff23a', '#ffffff', '#ff7a1a'] : ['#f3c96b', '#ffe7a8', '#fff3cf', '#ffffff'];
+  at(380 * beat, () => {
     odo.onDone = () => {
       gain.classList.add('landed');
-      if (chests > 0) burstFrom(odo.el, victory ? 70 : 34, victory ? ['#f3c96b', '#ffe7a8', '#fff6dc', '#f593c9'] : ['#f3c96b', '#ffe7a8', '#9d8cff'], victory ? 1.15 : 0.8);
-      lootRows.forEach((row, i) => at(260 + i * 420, () => {
+      if (chests > 0) burstFrom(odo.el, victory ? 70 : 34, gainColors, victory ? 1.15 : 0.8);
+      lootRows.forEach((row, i) => at((260 + i * 420) * beat, () => {
         row.classList.add('in');
-        if (row.classList.contains('golden')) burstFrom(row.querySelector('.thumb')!, 46, ['#f3c96b', '#ffe7a8', '#fff3cf', '#ffffff'], 0.9);
+        if (row.classList.contains('golden')) burstFrom(row.querySelector('.thumb')!, 46, goldColors, 0.9);
       }));
       if (lootRows.length === 0) at(200, () => loot.classList.add('in'));
       odo.onDone = undefined;
@@ -560,6 +612,10 @@ function reportSize() {
     const box = root.getBoundingClientRect();
     const hasContent = !hud.hidden || !crew.hidden || result != null;
     // The shell sizes the window to the content and shows it only when there is something to show.
+    if (preview) {
+      window.parent.postMessage({ cc: 'overlay-size', width: Math.ceil(box.width), height: Math.ceil(box.height) }, location.origin);
+      return;
+    }
     invoke('overlay_layout', { width: Math.ceil(box.width), height: Math.ceil(box.height), hasContent }).catch(() => { /* shell gone, or a browser */ });
   });
 }
@@ -594,8 +650,51 @@ function schedule() {
 new EventSource('/api/overlay/events').onmessage = schedule;
 void refresh();
 
+// ---- preview (the Settings page) --------------------------------------------------------------------------------
+
+/** Plays an end of match with the player's real figures: the latest match, or a sample when there is none. */
+function demoResult(victory: boolean) {
+  const d = previous;
+  if (!d) return;
+  const sample: TreasureTag[] = [
+    { kind: 'golden', item: null, name: null, prizeKey: null, golden: true, team: false },
+    { kind: 'gizmo', item: 'locator', golden: false, team: false },
+    { kind: 'unknown', golden: false, team: true },
+  ];
+  const chests = d.lastChests ?? 24;
+  // The figures roll up to their real values, as they would after a match.
+  for (const [key, c] of cells) {
+    const v = c.odo.value;
+    if (v == null || (key !== 'personal' && key !== 'session')) continue;
+    c.odo.set(Math.max(0, v - chests), '', false);
+    c.odo.set(v, '', true);
+    bump(c.el, Math.min(chests, v));
+  }
+  showResult({
+    ...d, lastChests: chests, lastPlacement: victory ? 1 : (d.lastPlacement ?? 7), lastTotalPlayers: d.lastTotalPlayers ?? 100,
+    lastEliminations: d.lastEliminations ?? 4, lastTreasures: d.lastTreasures?.length ? d.lastTreasures : sample,
+  });
+}
+
+if (preview) {
+  document.documentElement.classList.add('preview');
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || typeof e.data !== 'object' || e.data?.cc !== 'overlay-demo') return;
+    const what = e.data.what as string;
+    if (what === 'result' || what === 'victory') {
+      forcedMode = null;
+      if (previous) setMode('idle', previous.settings.showStatus !== false);
+      demoResult(what === 'victory');
+    } else if (what === 'live' || what === 'reading') {
+      forcedMode = { mode: what, until: Date.now() + 8000 };
+      if (previous) render(previous);
+      window.setTimeout(() => { if (previous) render(previous); }, 8100);
+    }
+  });
+}
+
 root.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || locked) return;
+  if (e.button !== 0 || locked || preview) return;
   try {
     void getCurrentWindow().startDragging().catch(() => { /* shell gone */ });
   } catch {
@@ -603,9 +702,9 @@ root.addEventListener('mousedown', (e) => {
   }
 });
 root.addEventListener('wheel', (e) => {
-  if (!locked && e.deltaY !== 0) void invoke('overlay_scale', { step: e.deltaY < 0 ? 1 : -1 }).catch(() => { /* a browser */ });
+  if (!locked && !preview && e.deltaY !== 0) void invoke('overlay_scale', { step: e.deltaY < 0 ? 1 : -1 }).catch(() => { /* a browser */ });
 }, { passive: true });
 window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  void invoke('overlay_menu').catch(() => { /* a browser */ });
+  if (!preview) void invoke('overlay_menu').catch(() => { /* a browser */ });
 });

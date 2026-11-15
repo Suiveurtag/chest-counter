@@ -43,7 +43,11 @@ export interface OverlaySettings {
   enabled: boolean; locked: boolean; opacity: number; scale: number; x?: number; y?: number; showPersonal: boolean;
   showSquad: boolean; showSession: boolean; showLastMatch: boolean; showMembers: boolean; squadScope: 'combined' | 'shared';
   toggleHotkey: string; lockHotkey: string;
+  theme: 'aurora' | 'rift'; layout: 'row' | 'column' | 'compact'; items: OverlayItem[]; showIcons: boolean; showStatus: boolean;
+  showResult: boolean; resultSeconds: number;
 }
+export type OverlayItem = 'personal' | 'squad' | 'squadShared' | 'session' | 'last' | 'treasures' | 'teamTreasures';
+export const OVERLAY_ITEMS: OverlayItem[] = ['personal', 'squad', 'squadShared', 'session', 'last', 'treasures', 'teamTreasures'];
 export interface AppSettings {
   demosFolder: string; demosFolderIsDefault: boolean; profile?: string; language: 'en' | 'fr'; timeFormat: 'auto' | '12' | '24';
   onboardingDone: boolean; minimizeToTray: boolean; startMinimized: boolean; launchWithWindows: boolean; launchWithFortnite: boolean;

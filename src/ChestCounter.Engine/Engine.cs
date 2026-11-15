@@ -55,6 +55,46 @@ public sealed record OverlaySettings
     public string SquadScope { get; init; } = "combined";
     public string ToggleHotkey { get; init; } = "Ctrl+Shift+O";
     public string LockHotkey { get; init; } = "Ctrl+Shift+L";
+
+    /// <summary>"aurora" (the app's own look) or "rift" (in the style of the game's menus).</summary>
+    public string Theme { get; init; } = "aurora";
+    /// <summary>"row" (side by side), "column" (one under the other) or "compact" (one small line).</summary>
+    public string Layout { get; init; } = "row";
+    /// <summary>The figures shown, in order (see <see cref="ItemKeys"/>). Null: derived from the older Show* switches.</summary>
+    public List<string>? Items { get; init; }
+    public bool ShowIcons { get; init; } = true;
+    /// <summary>"Match in progress" / "Reading the replay".</summary>
+    public bool ShowStatus { get; init; } = true;
+    /// <summary>The end-of-match card.</summary>
+    public bool ShowResult { get; init; } = true;
+    public int ResultSeconds { get; init; } = 14;
+
+    public static readonly string[] ItemKeys = { "personal", "squad", "squadShared", "session", "last", "treasures", "teamTreasures" };
+
+    /// <summary>Valid values everywhere, and the item list spelled out.</summary>
+    public OverlaySettings Normalized()
+    {
+        var items = Items?.Where(ItemKeys.Contains).Distinct().ToList();
+        if (items == null)
+        {
+            // Before the list existed: the Show* switches, and "squad" followed the squad scope.
+            items = new();
+            if (ShowPersonal) items.Add("personal");
+            if (ShowSquad) items.Add(SquadScope == "shared" ? "squadShared" : "squad");
+            if (ShowSession) items.Add("session");
+            if (ShowLastMatch) items.Add("last");
+        }
+        return this with
+        {
+            Opacity = Math.Clamp(Opacity, 20, 100),
+            Scale = Math.Clamp(Scale, 60, 250),
+            SquadScope = SquadScope == "shared" ? "shared" : "combined",
+            Theme = Theme == "rift" ? "rift" : "aurora",
+            Layout = Layout is "column" or "compact" ? Layout : "row",
+            Items = items,
+            ResultSeconds = Math.Clamp(ResultSeconds, 5, 60),
+        };
+    }
 }
 
 public sealed record AppState(string Version, int ParserVersion, string DataDir, AppSettings Settings, TrackingStatus Tracking, ImportStatus Import,
@@ -72,7 +112,8 @@ public sealed record OverlayMember(string Name, int Chests, int? LastMatch, bool
 public sealed record OverlayData(int Personal, int? Squad, string SquadScope, int Session, int? LastMatch, bool LastMatchPartial,
     List<OverlayMember> Members, string? PlayerName, string? SquadName, OverlaySettings Settings,
     bool Live = false, bool Reading = false, string? LastMatchId = null, int? LastChests = null, int? LastPlacement = null,
-    int? LastTotalPlayers = null, int? LastEliminations = null, List<TreasureTag>? LastTreasures = null);
+    int? LastTotalPlayers = null, int? LastEliminations = null, List<TreasureTag>? LastTreasures = null,
+    int Treasures = 0, int TeamTreasures = 0, int? SquadCombined = null, int? SquadShared = null);
 
 public sealed record Diagnostics(Dictionary<string, int> FileCounts, List<FileRow> Problems, List<MatchSummary> NotCounted, List<LogRow> Log,
     List<OutboxRow> RefusedUploads, string DatabasePath, long DatabaseBytes);
@@ -271,8 +312,8 @@ public sealed class ChestEngine : IDisposable
     {
         get
         {
-            try { return Db.GetSetting("overlay") is { } json ? Wire.Deserialize<OverlaySettings>(json) ?? new() : new(); }
-            catch { return new(); }
+            try { return (Db.GetSetting("overlay") is { } json ? Wire.Deserialize<OverlaySettings>(json) ?? new() : new()).Normalized(); }
+            catch { return new OverlaySettings().Normalized(); }
         }
     }
 
@@ -304,8 +345,7 @@ public sealed class ChestEngine : IDisposable
                     break;
                 case "overlay":
                     var o = System.Text.Json.JsonSerializer.Deserialize<OverlaySettings>(value.GetRawText(), Wire.Json) ?? new();
-                    o = o with { Opacity = Math.Clamp(o.Opacity, 20, 100), Scale = Math.Clamp(o.Scale, 60, 250), SquadScope = o.SquadScope == "shared" ? "shared" : "combined" };
-                    Db.SetSetting("overlay", Wire.Serialize(o));
+                    Db.SetSetting("overlay", Wire.Serialize(o.Normalized()));
                     break;
             }
         }
@@ -466,7 +506,9 @@ public sealed class ChestEngine : IDisposable
                 useShared ? lastShared!.Contributions.FirstOrDefault(c => c.UserId == m.UserId)?.Chests : null, m.Online)).ToList() ?? new(),
             profile?.Name, squad?.Name, settings,
             live, reading, last?.MatchId, last?.Chests, last?.Placement, last?.TotalPlayers, last?.Eliminations,
-            last == null ? new() : Treasures.Tags(Db.GetMatchDetail(last.MatchId), Hunt.Catalog));
+            last == null ? new() : Treasures.Tags(Db.GetMatchDetail(last.MatchId), Hunt.Catalog),
+            totals.Treasures, profile == null ? 0 : Db.TeamTreasureCount(profile.Key),
+            squad?.CombinedMemberChests, squad?.SharedChests);
     }
 
     public Diagnostics GetDiagnostics()

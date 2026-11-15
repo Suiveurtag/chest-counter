@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { ArchiveRestore, CheckCircle2, FileJson, FolderOpen } from 'lucide-react';
-import { api, useLive, type Diagnostics, type OverlaySettings } from '../api';
+import { api, useLive, type Diagnostics } from '../api';
 import { useLocale } from '../i18n';
 import { Seg, Switch, useAction } from '../parts';
+import { OverlaySection } from './OverlaySection';
 import type { PageProps } from '../App';
 
 /** "Synced today, 2:43 PM" -> "synced today, 2:43 PM" (the time keeps its own case). */
@@ -11,8 +12,6 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 export function Settings({ state, patch }: PageProps) {
   const { t, n, date, dateTime } = useLocale();
   const s = state.settings;
-  const o = s.overlay;
-  const overlay = (change: Partial<OverlaySettings>) => patch({ overlay: { ...o, ...change } });
   const { data: diag } = useLive<Diagnostics>('/api/diagnostics', ['matches', 'tracking', 'sync']);
   const action = useAction();
   const [saved, setSaved] = useState<string>();
@@ -32,7 +31,6 @@ export function Settings({ state, patch }: PageProps) {
     const result = await api.post<{ path?: string }>(`/api/actions/${name}`);
     setSaved(result.path && (name === 'backup' || name === 'export') ? result.path : undefined);
   });
-  const obsUrl = `${location.origin}/obs`;
   const counts = diag?.fileCounts ?? {};
 
   return (
@@ -55,32 +53,7 @@ export function Settings({ state, patch }: PageProps) {
         <p className="note mute">{t('settings.recordingHelp')}</p>
       </section>
 
-      <section className="panel setting-list">
-        <h2>{t('settings.overlay')}</h2>
-        <Switch checked={o.enabled} onChange={(v) => overlay({ enabled: v })} hint={t('settings.hotkeys', { toggle: o.toggleHotkey, lock: o.lockHotkey })}>{t('settings.overlayOn')}</Switch>
-        <Switch checked={o.locked} onChange={(v) => overlay({ locked: v })}>{t('settings.overlayLocked')}</Switch>
-        <div className="range"><span>{t('settings.opacity')}</span><input type="range" min={20} max={100} step={5} value={o.opacity} onChange={(e) => overlay({ opacity: Number(e.target.value) })} /><span className="num">{o.opacity}%</span></div>
-        <div className="range"><span>{t('settings.size')}</span><input type="range" min={60} max={250} step={10} value={o.scale} onChange={(e) => overlay({ scale: Number(e.target.value) })} /><span className="num">{o.scale}%</span></div>
-        <div>
-          <h3 style={{ marginBottom: 4 }}>{t('settings.show')}</h3>
-          <div className="checks">
-            <Switch checked={o.showPersonal} onChange={(v) => overlay({ showPersonal: v })}>{t('scope.personal')}</Switch>
-            <Switch checked={o.showSquad} onChange={(v) => overlay({ showSquad: v })}>{t('scope.squad')}</Switch>
-            <Switch checked={o.showSession} onChange={(v) => overlay({ showSession: v })}>{t('scope.session')}</Switch>
-            <Switch checked={o.showLastMatch} onChange={(v) => overlay({ showLastMatch: v })}>{t('scope.last')}</Switch>
-            <Switch checked={o.showMembers} onChange={(v) => overlay({ showMembers: v })}>{t('settings.members')}</Switch>
-          </div>
-        </div>
-        <div className="actions"><span className="soft">{t('settings.squadScope')}</span>
-          <Seg value={o.squadScope} onChange={(v) => overlay({ squadScope: v })} options={[['combined', t('settings.scopeCombined')], ['shared', t('settings.scopeShared')]]} />
-        </div>
-        <p className="note mute">{t('settings.overlayHint')}</p>
-        <div className="field">
-          <label>{t('settings.obs')}</label>
-          <div className="code selectable">{obsUrl}</div>
-          <p className="note mute">{t('settings.obsHint')}</p>
-        </div>
-      </section>
+      <OverlaySection state={state} patch={patch} />
 
       <section className="panel setting-list">
         <h2>{t('settings.startup')}</h2>

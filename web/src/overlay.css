@@ -17,6 +17,9 @@
   --label: #a9a3cb;
   --member: #cfc9ea;
   --violet: #9d8cff;
+  --teal: #52e0c4;
+  --violet-t: #c3b3ff;
+  --mint: #8ef5c1;
   --panel: rgba(15, 12, 32, 0.8);
   --panel-hi: rgba(36, 29, 72, 0.82);
   --line: rgba(255, 255, 255, 0.09);
@@ -55,6 +58,9 @@ body {
   box-shadow: inset 0 0 0 max(1px, calc(1.5px * var(--k))) rgba(157, 140, 255, 0.86);
   cursor: move;
 }
+
+/* Inside the Settings page: a little room around it. */
+.preview body { padding: 12px; }
 
 [hidden] {
   display: none !important;
@@ -238,6 +244,15 @@ body {
   letter-spacing: -0.01em;
 }
 /* Glows are filters on the whole number: a text-shadow would be cut by each digit's window. */
+.cell.teal .cell-head .ico { color: var(--teal); }
+.cell.violet .cell-head .ico { color: var(--violet-t); }
+.cell.mint .cell-head .ico { color: var(--mint); }
+.cell.teal .value { color: var(--teal); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(82, 224, 196, 0.26)); }
+.cell.violet .value { color: var(--violet-t); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(195, 179, 255, 0.3)); }
+.cell.mint .value { color: var(--mint); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(142, 245, 193, 0.26)); }
+.cell.teal { color: var(--teal); }
+.cell.violet { color: var(--violet-t); }
+.cell.mint { color: var(--mint); }
 .cell.gold .value { color: var(--gold); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(243, 201, 107, 0.3)); }
 .cell.cyan .value { color: var(--cyan); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(106, 217, 234, 0.26)); }
 .cell.pink .value { color: var(--pink); filter: drop-shadow(0 0 calc(8px * var(--k)) rgba(245, 147, 201, 0.26)); }
@@ -642,7 +657,479 @@ body {
   animation: drain linear forwards;
 }
 
+/* ---- layouts (Aurora) ----------------------------------------------------------------------------------------- */
+
+.no-icons .cell-head .ico { display: none; }
+
+/* One under the other: the label on the left, the figure on the right. */
+.layout-column .stats {
+  flex-direction: column;
+  padding: calc(6px * var(--k)) 0;
+}
+.layout-column .cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(18px * var(--k));
+  min-width: calc(170px * var(--k));
+  padding: calc(5px * var(--k)) calc(14px * var(--k));
+}
+.layout-column .cell + .cell {
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}
+.layout-column .value {
+  margin: 0;
+  font-size: calc(22px * var(--k));
+}
+.layout-column .gain { right: calc(14px * var(--k)); top: calc(-10px * var(--k)); }
+
+/* One small line: icons and figures (labels only when there are no icons). */
+.layout-compact .stats { padding: calc(6px * var(--k)) calc(4px * var(--k)); }
+.layout-compact .cell {
+  display: flex;
+  align-items: center;
+  gap: calc(5px * var(--k));
+  min-width: 0;
+  padding: 0 calc(9px * var(--k));
+}
+.layout-compact .label { display: none; }
+.layout-compact.no-icons .label { display: inline; }
+.layout-compact .cell-head .ico { font-size: calc(14px * var(--k)); }
+.layout-compact .value {
+  margin: 0;
+  font-size: calc(19px * var(--k));
+}
+.layout-compact .status { padding: calc(6px * var(--k)) calc(12px * var(--k)) 0; }
+.layout-compact .gain { top: calc(-12px * var(--k)); right: calc(2px * var(--k)); font-size: calc(10px * var(--k)); }
+
+/* ---- Rift theme ------------------------------------------------------------------------------------------------
+   In the spirit of the game's own menus (Rift UI): bright gradient tiles with rounded corners, heavy condensed
+   italic capitals, small dark capsules for counts, white "selected" outlines and yellow for what matters.
+   The motion is short and springy: things snap in sideways with a slight skew, figures punch, a light sweeps. */
+
+.theme-rift {
+  --rift-font: 'Barlow Condensed', 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
+  --rift-yellow: #fff23a;
+  --rift-ink: #13114a;
+  --rift-label: #a9c6ff;
+  --rift-outline: #e4eaff;
+  --snap: cubic-bezier(0.2, 1.35, 0.4, 1);
+  --whip: cubic-bezier(0.6, 0, 0.9, 0.4);
+  font-family: var(--rift-font);
+  gap: calc(6px * var(--k));
+}
+
+.theme-rift .hud {
+  background: none;
+  box-shadow: none;
+  border-radius: calc(9px * var(--k));
+  animation: none;
+}
+.theme-rift .hud::before,
+.theme-rift .hud::after { display: none; }
+
+/* State of play: a white tag, like the menus' "refreshes daily" labels. */
+.theme-rift .status {
+  padding: 0;
+  margin: 0 0 calc(6px * var(--k)) calc(2px * var(--k));
+  font-family: var(--rift-font);
+  font-size: calc(13px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.03em;
+  color: var(--rift-ink);
+}
+.theme-rift .status.shown {
+  display: inline-flex;
+  width: max-content;
+  padding: calc(3px * var(--k)) calc(10px * var(--k)) calc(3px * var(--k)) calc(8px * var(--k));
+  border-radius: calc(4px * var(--k));
+  background: #fff;
+  box-shadow: 0 calc(3px * var(--k)) calc(10px * var(--k)) rgba(10, 8, 60, 0.35);
+  animation: rift-tag 0.32s var(--snap) backwards;
+}
+.theme-rift .status-dot { color: #ff2e5b; }
+.theme-rift .status-bars { color: var(--rift-ink); }
+.theme-rift .hud.is-reading .status { color: var(--rift-ink); }
+.theme-rift .hud.is-reading .status.shown { background: #d9dcff; }
+.theme-rift .hud.is-reading .status-dot { color: #5b3dff; }
+
+/* The figures: one gradient tile each. */
+.theme-rift .stats {
+  gap: calc(6px * var(--k));
+  padding: 0;
+  border-radius: calc(9px * var(--k));
+}
+.theme-rift .hud.is-live .stats {
+  outline: max(1.5px, calc(2px * var(--k))) solid var(--rift-outline);
+  outline-offset: calc(3px * var(--k));
+  animation: rift-focus 1.8s ease-in-out infinite;
+}
+.theme-rift .hud.is-reading .stats {
+  outline: max(1.5px, calc(2px * var(--k))) dashed rgba(228, 234, 255, 0.8);
+  outline-offset: calc(3px * var(--k));
+}
+.theme-rift .cell {
+  --tile: linear-gradient(135deg, #7c8cff, #3b2fd6);
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  min-width: calc(86px * var(--k));
+  padding: calc(7px * var(--k)) calc(12px * var(--k)) calc(6px * var(--k));
+  border-radius: calc(6px * var(--k));
+  background: var(--tile);
+  color: #fff;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24),
+    inset 0 calc(-16px * var(--k)) calc(20px * var(--k)) rgba(10, 6, 60, 0.22),
+    0 calc(3px * var(--k)) calc(10px * var(--k)) rgba(10, 8, 60, 0.35);
+  animation: rift-tile 0.38s var(--snap) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+.theme-rift .cell + .cell { border-left: 0; }
+.theme-rift .cell.gold { --tile: linear-gradient(135deg, #ffd23a 0%, #ff8a1f 100%); }
+.theme-rift .cell.cyan { --tile: linear-gradient(135deg, #2fd0ff 0%, #2453ff 100%); }
+.theme-rift .cell.teal { --tile: linear-gradient(135deg, #55e37b 0%, #12998d 100%); }
+.theme-rift .cell.pink { --tile: linear-gradient(135deg, #ff62b0 0%, #9a3cff 100%); }
+.theme-rift .cell.text { --tile: linear-gradient(135deg, #6f86ff 0%, #3a25cf 100%); }
+.theme-rift .cell.violet { --tile: linear-gradient(135deg, #cf5cff 0%, #6a22d8 100%); }
+.theme-rift .cell.mint { --tile: linear-gradient(135deg, #3ee6c6 0%, #1b74d8 100%); }
+
+/* A light sweeps across each tile as it lands. */
+.theme-rift .cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 46%, transparent 60%);
+  transform: translateX(-130%);
+  animation: sheen 0.7s ease-out backwards;
+  animation-delay: calc(0.18s + var(--i, 0) * 55ms);
+  pointer-events: none;
+}
+
+.theme-rift .cell-head {
+  margin-top: calc(1px * var(--k));
+  font-family: var(--rift-font);
+  font-size: calc(13px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(10, 6, 60, 0.3);
+}
+/* The icon sits in a small dark badge in the corner, like the menus' "XP" badges. */
+.theme-rift .cell-head .ico {
+  position: absolute;
+  top: calc(6px * var(--k));
+  right: calc(6px * var(--k));
+  width: calc(19px * var(--k));
+  height: calc(19px * var(--k));
+  padding: calc(3px * var(--k));
+  box-sizing: border-box;
+  border-radius: calc(4px * var(--k));
+  background: rgba(16, 8, 70, 0.5);
+  color: #fff;
+  font-size: inherit;
+  opacity: 1;
+  transform: skewX(-8deg);
+}
+.theme-rift .ico .lock { fill: rgba(16, 8, 70, 0.9); }
+.theme-rift:not(.no-icons) .cell { padding-right: calc(32px * var(--k)); }
+
+.theme-rift .value,
+.theme-rift .cell.gold .value,
+.theme-rift .cell.cyan .value,
+.theme-rift .cell.teal .value,
+.theme-rift .cell.pink .value,
+.theme-rift .cell.text .value,
+.theme-rift .cell.violet .value,
+.theme-rift .cell.mint .value {
+  margin: 0;
+  font-family: var(--rift-font);
+  font-size: calc(34px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0;
+  color: #fff;
+  filter: drop-shadow(0 calc(2px * var(--k)) 0 rgba(10, 6, 60, 0.28));
+}
+.theme-rift .odo { line-height: 1.02; }
+.theme-rift .odo .slot,
+.theme-rift .odo .strip > span { height: 1.02em; }
+/* Italic figures lean out of their windows: give them room. */
+.theme-rift .odo .slot { padding-right: 0.05em; margin-right: -0.05em; }
+
+/* A figure that grew: the tile punches, flashes white, and a yellow "+N" tag pops out. */
+.theme-rift .cell.bump { animation: rift-punch 0.42s var(--snap); }
+.theme-rift .cell.bump .value { animation: none; }
+.theme-rift .cell.bump::before {
+  inset: 0;
+  background: #fff;
+  z-index: 1;
+  animation: rift-flash 0.5s ease-out;
+}
+.theme-rift .cell.bump::after { animation: sheen 0.6s ease-out; }
+.theme-rift .gain {
+  top: auto;
+  bottom: calc(5px * var(--k));
+  right: calc(6px * var(--k));
+  z-index: 2;
+  padding: 0 calc(5px * var(--k));
+  border-radius: calc(3px * var(--k));
+  background: var(--rift-yellow);
+  color: var(--rift-ink);
+  font-family: var(--rift-font);
+  font-size: calc(13px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  text-shadow: none;
+  transform: skewX(-8deg);
+  animation: rift-gain 1.6s var(--snap) forwards;
+}
+
+/* Layouts. */
+.theme-rift.layout-column .stats { flex-direction: column; gap: calc(5px * var(--k)); }
+.theme-rift.layout-column .cell {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(10px * var(--k));
+  min-width: calc(200px * var(--k));
+  padding: calc(5px * var(--k)) calc(12px * var(--k));
+}
+.theme-rift.layout-column .cell-head { flex: 1; margin: 0; font-size: calc(14px * var(--k)); }
+.theme-rift.layout-column .cell-head .ico { position: static; margin-right: calc(4px * var(--k)); }
+.theme-rift.layout-column .value { font-size: calc(28px * var(--k)); }
+.theme-rift.layout-column:not(.no-icons) .cell { padding-right: calc(12px * var(--k)); }
+.theme-rift.layout-column .gain { bottom: auto; top: 50%; right: auto; left: 52%; margin-top: calc(-9px * var(--k)); }
+
+.theme-rift.layout-compact .stats { gap: calc(4px * var(--k)); }
+.theme-rift.layout-compact .cell {
+  flex-direction: row;
+  align-items: center;
+  gap: calc(6px * var(--k));
+  min-width: 0;
+  padding: calc(3px * var(--k)) calc(10px * var(--k)) calc(3px * var(--k)) calc(5px * var(--k));
+}
+.theme-rift.layout-compact .cell-head { margin: 0; }
+.theme-rift.layout-compact .cell-head .ico { position: static; }
+.theme-rift.layout-compact .value { font-size: calc(23px * var(--k)); }
+.theme-rift.layout-compact.no-icons .cell { padding-left: calc(10px * var(--k)); }
+.theme-rift.layout-compact:not(.no-icons) .cell { padding-right: calc(10px * var(--k)); }
+.theme-rift.layout-compact .gain { bottom: auto; top: calc(2px * var(--k)); font-size: calc(10px * var(--k)); }
+
+/* The squad: one dark blue strip. */
+.theme-rift .crew {
+  border-radius: calc(6px * var(--k));
+  background: linear-gradient(90deg, rgba(20, 30, 120, 0.9), rgba(40, 20, 130, 0.88));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  font-family: var(--rift-font);
+  font-size: calc(15px * var(--k));
+  font-weight: 700;
+  font-style: italic;
+  text-transform: uppercase;
+  animation: rift-tile 0.38s var(--snap) 0.1s backwards;
+}
+.theme-rift .member .name { color: #fff; }
+.theme-rift .member.offline .name { color: var(--rift-label); }
+.theme-rift .member .chests { color: var(--rift-yellow); font-family: var(--rift-font); font-weight: 800; }
+
+/* ---- Rift: the end-of-match card ---------------------------------------------------------------------------- */
+
+.theme-rift .result {
+  min-width: calc(260px * var(--k));
+  padding: calc(12px * var(--k)) calc(14px * var(--k)) calc(14px * var(--k));
+  border-radius: calc(7px * var(--k));
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(160, 90, 255, 0.55), transparent 60%),
+    linear-gradient(160deg, #2a5cff 0%, #3a26d0 58%, #2a1696 100%);
+  box-shadow:
+    inset 0 0 0 max(1.5px, calc(2px * var(--k))) var(--rift-outline),
+    0 calc(6px * var(--k)) calc(18px * var(--k)) rgba(10, 8, 60, 0.45);
+  font-family: var(--rift-font);
+  animation: rift-wipe 0.42s var(--snap) backwards;
+}
+.theme-rift .result.leaving { animation: rift-wipe-out 0.3s var(--whip) forwards; }
+.theme-rift .result::before {
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.4) 47%, transparent 62%);
+  animation: sheen 0.8s 0.2s ease-out forwards;
+}
+.theme-rift .result.victory {
+  background:
+    radial-gradient(130% 90% at 50% -10%, rgba(255, 242, 58, 0.45), transparent 60%),
+    linear-gradient(160deg, #ff9a1f 0%, #e5532e 45%, #7a1fd0 100%);
+  box-shadow:
+    inset 0 0 0 max(1.5px, calc(2px * var(--k))) #fff7b8,
+    0 0 calc(22px * var(--k)) rgba(255, 210, 60, 0.45);
+}
+
+.theme-rift .r-title {
+  font-family: var(--rift-font);
+  font-size: calc(22px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 calc(2px * var(--k)) 0 rgba(10, 6, 60, 0.3);
+  animation: rift-slide 0.34s var(--snap) 0.12s backwards;
+}
+.theme-rift .result.victory .r-title { color: var(--rift-yellow); text-shadow: 0 calc(2px * var(--k)) 0 rgba(90, 20, 10, 0.4); }
+.theme-rift .r-title .crown { color: var(--rift-yellow); font-size: calc(20px * var(--k)); filter: none; }
+
+/* Placement: a skewed purple badge (yellow for a win). */
+.theme-rift .r-place {
+  padding: calc(1px * var(--k)) calc(8px * var(--k));
+  border-radius: calc(3px * var(--k));
+  background: #7b2cff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  font-family: var(--rift-font);
+  font-size: calc(18px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  color: #fff;
+  transform: skewX(-8deg);
+  animation: rift-badge 0.4s var(--snap) 0.22s backwards;
+}
+.theme-rift .r-place small { color: rgba(255, 255, 255, 0.7); }
+.theme-rift .result.victory .r-place { background: var(--rift-yellow); color: var(--rift-ink); box-shadow: none; }
+.theme-rift .result.victory .r-place small { color: rgba(19, 17, 74, 0.6); }
+
+.theme-rift .r-gain {
+  margin-top: calc(2px * var(--k));
+  color: var(--rift-yellow);
+  font-family: var(--rift-font);
+  filter: drop-shadow(0 calc(3px * var(--k)) 0 rgba(10, 6, 60, 0.3));
+}
+.theme-rift .r-plus { font-size: calc(38px * var(--k)); font-weight: 800; font-style: italic; opacity: 1; }
+.theme-rift .r-value { font-size: calc(58px * var(--k)); font-weight: 800; font-style: italic; letter-spacing: 0; }
+.theme-rift .r-unit {
+  font-family: var(--rift-font);
+  font-size: calc(18px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #fff;
+  opacity: 1;
+}
+.theme-rift .r-gain.landed .r-value { animation: rift-punch 0.42s var(--snap); }
+/* On the orange of a win, yellow would fade: white figures, and treasure tiles framed in white. */
+.theme-rift .result.victory .r-gain { color: #fff; filter: drop-shadow(0 calc(3px * var(--k)) 0 rgba(90, 20, 10, 0.45)); }
+.theme-rift .result.victory .loot { box-shadow: inset 0 0 0 max(1.5px, calc(2px * var(--k))) #fff, 0 calc(3px * var(--k)) calc(8px * var(--k)) rgba(60, 10, 30, 0.45); }
+.theme-rift .r-sub {
+  font-family: var(--rift-font);
+  font-size: calc(14px * var(--k));
+  font-weight: 700;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--rift-label);
+}
+.theme-rift .result.victory .r-sub { color: #ffe3b0; }
+
+.theme-rift .r-loot { border-top-color: rgba(255, 255, 255, 0.2); }
+.theme-rift .r-loot-head {
+  font-family: var(--rift-font);
+  font-size: calc(14px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+/* Counts sit in a small dark capsule, as in "0/25". */
+.theme-rift .r-loot-head .count {
+  padding: 0 calc(6px * var(--k));
+  border-radius: calc(4px * var(--k));
+  background: rgba(10, 6, 60, 0.55);
+  color: #fff;
+  font-style: italic;
+}
+.theme-rift .r-none { font-size: calc(14px * var(--k)); font-style: italic; color: var(--rift-label); }
+
+/* Treasures: rarity tiles that slam in from the side. */
+.theme-rift .loot {
+  margin-top: calc(5px * var(--k));
+  border-radius: calc(5px * var(--k));
+  background: linear-gradient(110deg, #c25bff, #7322e0);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3), 0 calc(2px * var(--k)) calc(6px * var(--k)) rgba(10, 6, 60, 0.3);
+  transform: translateX(calc(26px * var(--k))) skewX(-10deg) scale(1.04);
+}
+.theme-rift .loot.rarity-legendary { background: linear-gradient(110deg, #ffc23a, #ff6a12 70%, #e8431f); box-shadow: inset 0 0 0 1px rgba(255, 248, 200, 0.7), 0 0 calc(14px * var(--k)) rgba(255, 170, 40, 0.45); }
+.theme-rift .loot.rarity-rare { background: linear-gradient(110deg, #3cb0ff, #1f56ff); }
+.theme-rift .loot.in {
+  transform: none;
+  transition: opacity 0.18s ease, transform 0.36s var(--snap);
+}
+.theme-rift .loot.in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  animation: rift-flash 0.45s ease-out forwards;
+  pointer-events: none;
+}
+.theme-rift .loot.golden.in::after { animation: sheen 0.8s 0.15s ease-out 2; }
+.theme-rift .thumb { border-radius: calc(4px * var(--k)); background: rgba(10, 6, 60, 0.45); color: #fff; }
+.theme-rift .loot.golden .thumb { color: var(--rift-yellow); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
+.theme-rift .loot-name {
+  font-family: var(--rift-font);
+  font-size: calc(15px * var(--k));
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(10, 6, 60, 0.3);
+}
+.theme-rift .loot.golden .loot-name { color: #fff; }
+.theme-rift .loot-kind { font-size: calc(12px * var(--k)); font-weight: 600; color: rgba(255, 255, 255, 0.85); }
+.theme-rift .badge { background: rgba(10, 6, 60, 0.45); color: #fff; font-style: italic; }
+.theme-rift .stars,
+.theme-rift .loot.golden .stars { color: #fff; text-shadow: none; }
+.theme-rift .r-timer { background: var(--rift-yellow); opacity: 0.9; height: max(2px, calc(3px * var(--k))); }
+
 /* ---- motion --------------------------------------------------------------------------------------------- */
+
+@keyframes rift-tile {
+  from { opacity: 0; transform: translateX(calc(-18px * var(--k))) skewX(-12deg) scale(0.92); }
+  60% { opacity: 1; }
+}
+@keyframes rift-tag {
+  from { opacity: 0; transform: translateX(calc(-10px * var(--k))) skewX(-14deg); }
+}
+@keyframes rift-slide {
+  from { opacity: 0; transform: translateX(calc(-14px * var(--k))); }
+}
+@keyframes rift-badge {
+  from { opacity: 0; transform: skewX(-8deg) scale(0.4) rotate(-8deg); }
+}
+@keyframes rift-punch {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+@keyframes rift-flash {
+  from { opacity: 0.55; }
+  to { opacity: 0; }
+}
+@keyframes rift-gain {
+  0% { opacity: 0; transform: skewX(-8deg) translateY(calc(6px * var(--k))) scale(0.5); }
+  14% { opacity: 1; transform: skewX(-8deg) translateY(0) scale(1.15); }
+  24% { transform: skewX(-8deg) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: skewX(-8deg) translateY(calc(-4px * var(--k))); }
+}
+@keyframes rift-focus {
+  0%, 100% { outline-color: rgba(228, 234, 255, 0.95); }
+  50% { outline-color: rgba(228, 234, 255, 0.45); }
+}
+@keyframes rift-wipe {
+  from { clip-path: inset(0 100% 0 0 round calc(7px * var(--k))); transform: translateX(calc(-16px * var(--k))) skewX(-6deg); }
+  to { clip-path: inset(0 0 0 0 round calc(7px * var(--k))); }
+}
+@keyframes rift-wipe-out {
+  to { clip-path: inset(0 0 0 100% round calc(7px * var(--k))); transform: translateX(calc(16px * var(--k))) skewX(-6deg); opacity: 0.6; }
+}
 
 @keyframes spin { to { --spin: 360deg; } }
 @keyframes rise { from { opacity: 0; transform: translateY(calc(6px * var(--k))); } }
