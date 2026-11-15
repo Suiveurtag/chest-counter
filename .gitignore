@@ -9,7 +9,10 @@ reference/
 *.user
 .vs/
 *.replay
-src/ChestCounter.App/wwwroot/
+src/ChestCounter.Host/wwwroot/
+desktop/target/
+desktop/engine/
+desktop/gen/
 server-data/
 .env
 

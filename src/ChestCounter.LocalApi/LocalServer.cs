@@ -164,6 +164,8 @@ public sealed class LocalServer : IAsyncDisposable
         app.MapGet("/api/timeline", (string? from, string? to, string? bucket) => Json(e.GetTimeline(Date(from), Date(to), bucket == "week" ? "week" : "day")));
         app.MapGet("/api/diagnostics", () => Json(e.GetDiagnostics()));
 
+        // The settings alone: what the desktop shell re-reads on every "settings" change (cheaper than /api/state).
+        app.MapGet("/api/settings", () => Json(e.Settings));
         app.MapPost("/api/settings", (Dictionary<string, JsonElement> patch) =>
         {
             e.UpdateSettings(patch);

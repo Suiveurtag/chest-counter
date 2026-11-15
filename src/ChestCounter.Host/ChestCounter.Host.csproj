@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- A console process without a window of its own: the Tauri shell starts it with CREATE_NO_WINDOW and talks
+         to it over stdin/stdout (see Program.cs). -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ChestCounter.Host</RootNamespace>
+    <AssemblyName>ChestCounterEngine</AssemblyName>
+    <!-- Publishing: self-contained single file. No trimming: the replay parser relies on reflection. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ChestCounter.LocalApi\ChestCounter.LocalApi.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The interface (built from web/ by `npm run build`) is served from a folder next to the executable. -->
+    <None Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+</Project>

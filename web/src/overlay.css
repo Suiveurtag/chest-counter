@@ -1,0 +1,91 @@
+/* Sizes are multiplied by --k (the overlay's own scale; the window's DPI scale is applied by the webview). */
+:root {
+  --k: 1;
+  --gold: #f3c96b;
+  --cyan: #6ad9ea;
+  --pink: #f593c9;
+  --text: #f1eefc;
+  --label: #a9a3cb;
+  --member: #cfc9ea;
+  --violet: #9d8cff;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+#overlay {
+  display: inline-flex;
+  flex-direction: column;
+  gap: calc(8px * var(--k));
+  padding: calc(2px * var(--k));
+  border-radius: calc(15px * var(--k));
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Unlocked: a violet outline says "you can grab me" (violet = interactive, as in the app). */
+#overlay.unlocked {
+  box-shadow: inset 0 0 0 max(1px, calc(1.5px * var(--k))) rgba(157, 140, 255, 0.86);
+  cursor: move;
+}
+
+.card {
+  display: flex;
+  width: max-content;
+  min-width: calc(60px * var(--k));
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.row {
+  gap: calc(18px * var(--k));
+  padding: calc(10px * var(--k)) calc(16px * var(--k));
+  border-radius: calc(14px * var(--k));
+  background: rgba(16, 13, 34, 0.72);
+}
+
+.cell {
+  min-width: calc(54px * var(--k));
+}
+
+.label {
+  font-size: calc(11px * var(--k));
+  line-height: 1.33;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+.value {
+  margin-top: calc(2px * var(--k));
+  margin-left: calc(-1px * var(--k));
+  font-size: calc(26px * var(--k));
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gold { color: var(--gold); }
+.cyan { color: var(--cyan); }
+.pink { color: var(--pink); }
+.text { color: var(--text); }
+
+.members {
+  gap: calc(14px * var(--k));
+  padding: calc(6px * var(--k)) calc(16px * var(--k));
+  border-radius: calc(12px * var(--k));
+  background: rgba(16, 13, 34, 0.6);
+  font-size: calc(13px * var(--k));
+  white-space: nowrap;
+}
+
+.member .name { color: var(--member); margin-right: calc(5px * var(--k)); }
+.member .name.offline { color: var(--label); }
+.member .chests { color: var(--cyan); font-weight: 700; }

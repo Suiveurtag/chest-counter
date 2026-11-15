@@ -19,7 +19,7 @@ memory, and injects nothing. The in-game counter is an ordinary always-on-top wi
 - **Squad totals.** Optional. Each player runs the app, and a small self-hosted server combines what each of you
   opened. Two figures are shown: *combined* (each member's lifetime total, added up) and *together* (only matches you
   played as a team). Join with a single invite link.
-- **In-game overlay.** A separate transparent window, drawn natively. Drag it to move, scroll on it to resize,
+- **In-game overlay.** A separate transparent, always-on-top window that never takes the focus. Drag it to move, scroll on it to resize,
   lock it to make clicks pass through. Default shortcuts are Ctrl+Shift+O (show or hide) and Ctrl+Shift+L (lock).
   It shows over windowed and borderless Fortnite, not over exclusive fullscreen.
 - **OBS source.** `http://127.0.0.1:47821/obs` is a transparent page with the same figures. Add it as a Browser
@@ -53,14 +53,16 @@ These come from what a replay file contains. The app documents them instead of e
   never on a real Fortnite replay.** Cross-device matching by `GameSessionId` is likewise unverified on real data.
 - The Docker image of the squad server **has never been built** here (no Docker on the development PC). The server
   itself runs and is covered by integration tests.
-- The desktop shell has been run on Windows 11: window, WebView2, tray, overlay and the local API were checked by
-  hand. "Start with Windows" and "start with Fortnite" were not exercised end to end.
+- The desktop shell is now Tauri (`desktop/`). On Windows 11: the main window, the overlay, its two shortcuts
+  (show, lock) were checked, the overlay does not take the focus, and the engine stops when the shell is killed.
+  **Dragging and resizing the overlay, its right-click menu, the folder picker and the tray menu have not been
+  checked yet in the Tauri version.** "Start with Windows" and "start with Fortnite" were not exercised end to end.
 
 ## Install and run
 
-Download `ChestCounterSquad-win-x64.zip`, unzip it anywhere, run `ChestCounterSquad.exe`. Nothing else is
-needed on Windows 10 or 11: the .NET runtime is bundled, and the Microsoft Edge WebView2 runtime ships with Windows
-(if it is missing, the app offers to open the interface in your browser instead).
+Download `ChestCounterSquad-win-x64.zip`, unzip it anywhere, run `ChestCounterSquad.exe` (keep the `engine`
+folder next to it). Nothing else is needed on Windows 10 or 11: the .NET runtime is bundled in the engine, and the
+Microsoft Edge WebView2 runtime ships with Windows.
 
 On first launch the app finds Fortnite's replay folder
 (`%LOCALAPPDATA%\FortniteGame\Saved\Demos`), imports what is there, and keeps watching it.
@@ -70,13 +72,14 @@ On first launch the app finds Fortnite's replay folder
 | `%APPDATA%\ChestCounterSquad\history.db` | Your history and settings (one SQLite file) |
 | `%APPDATA%\ChestCounterSquad\backups`, `exports` | Backups and CSV exports made from Settings |
 | `%APPDATA%\ChestCounterSquad\webview` | The embedded browser's profile |
+| `%APPDATA%\app.chestcounter.squad` | The main window's size and position |
 | `HKCU\...\CurrentVersion\Run`: `ChestCounterSquad`, `ChestCounterSquad-Standby` | Only when "start with Windows" or "start with Fortnite" is on |
 
 Command line: `--minimized` (start in the tray), `--data <folder>` (another data folder, e.g. a second profile),
 `--standby` (the "start with Fortnite" watcher; you never need to run it yourself).
 
-To uninstall, turn off both startup options in Settings, quit from the tray, then delete the app folder and
-`%APPDATA%\ChestCounterSquad`.
+To uninstall, turn off both startup options in Settings, quit from the tray, then delete the app folder,
+`%APPDATA%\ChestCounterSquad` and `%APPDATA%\app.chestcounter.squad`.
 
 ## Host a squad server
 
@@ -119,7 +122,8 @@ variables.
 
 ## Build from source
 
-Requirements: .NET SDK 10, Node.js 20 or newer. On the development PC both are portable copies under `.tools/`.
+Requirements: .NET SDK 10, Node.js 20 or newer, Rust (stable, MSVC toolchain) with the Visual Studio C++ Build
+Tools. On the development PC .NET and Node are portable copies under `.tools/`.
 
 ```bash
 npm --prefix web ci
@@ -133,12 +137,19 @@ npm --prefix web run build
 dotnet test tests/ChestCounter.Tests
 ```
 
+The web build writes into `src/ChestCounter.Host/wwwroot`, which the engine serves. The Tauri shell starts the
+engine from an `engine` folder next to its own exe, so publish the engine there once, then build and run the shell:
+
 ```bash
-dotnet run --project src/ChestCounter.App
+dotnet publish src/ChestCounter.Host -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o desktop/engine
 ```
 
-The web build writes into `src/ChestCounter.App/wwwroot`, which the app serves. To produce the release folders in
-`dist/`:
+```bash
+cargo run --manifest-path desktop/Cargo.toml -- --data "%TEMP%\cc-dev"
+```
+
+`CC_ENGINE=<path to ChestCounterEngine.exe>` points the shell at another engine build. A debug build of the shell
+never writes the startup entries. To produce the release folders in `dist/`:
 
 ```bash
 powershell -ExecutionPolicy Bypass -File build/publish.ps1
@@ -169,8 +180,9 @@ Then open `http://127.0.0.1:47821/?token=dev`. For hot reload, also run `npm --p
 | `src/ChestCounter.Shared` | Wire contracts and the squad aggregation rules (pure, shared by client and server) |
 | `src/ChestCounter.Server` | Self-hosted squad server (ASP.NET Core minimal API, SQLite, WebSocket push) |
 | `src/ChestCounter.LocalApi` | Loopback HTTP API and the OBS page |
-| `src/ChestCounter.App` | Windows shell: WebView2 window, tray, native overlay, hotkeys, startup |
-| `web/` | The interface (React, TypeScript, Vite) |
+| `src/ChestCounter.Host` | The engine as a windowless process the shell starts (JSON lines over stdin/stdout) |
+| `desktop/` | Windows shell (Tauri, Rust): main window, tray, overlay window, shortcuts, startup |
+| `web/` | The interface and the overlay page (React, TypeScript, Vite) |
 | `tools/DevHost` | Fixture-data host for interface work |
 | `tests/` | xUnit tests: engine, aggregation, server API, sync end to end |
 

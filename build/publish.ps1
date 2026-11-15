@@ -1,5 +1,5 @@
 # Builds the release folders and zips in dist/:
-#   dist/ChestCounterSquad-win-x64/          the desktop app (self-contained, single exe + wwwroot)
+#   dist/ChestCounterSquad-win-x64/          the desktop app: Tauri shell exe + engine\ (self-contained .NET exe + wwwroot)
 #   dist/ChestCounterSquad-Server-win-x64/   the squad server for Windows (self-contained, single exe)
 # Uses the portable toolchain in .tools/ when present, else dotnet/npm from PATH.
 $ErrorActionPreference = 'Stop'
@@ -26,10 +26,24 @@ New-Item -ItemType Directory $dist | Out-Null
 
 $common = @('-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-p:PublishSingleFile=true', '-p:DebugType=none', '--nologo')
 
-Write-Host '== desktop app'
+Write-Host '== engine (the desktop shell starts it from its engine\ folder)'
+$engine = Join-Path $root 'desktop\engine'
+if (Test-Path $engine) { Remove-Item $engine -Recurse -Force }
+& $dotnet publish (Join-Path $root 'src\ChestCounter.Host\ChestCounter.Host.csproj') @common -o $engine
+if ($LASTEXITCODE) { throw 'engine publish failed' }
+
+Write-Host '== desktop shell (Tauri)'
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path $cargo)) { $cargo = 'cargo' }
+Push-Location (Join-Path $root 'desktop')
+try {
+    & $cargo build --release --features custom-protocol
+    if ($LASTEXITCODE) { throw 'desktop build failed' }
+} finally { Pop-Location }
 $app = Join-Path $dist 'ChestCounterSquad-win-x64'
-& $dotnet publish (Join-Path $root 'src\ChestCounter.App\ChestCounter.App.csproj') @common -o $app
-if ($LASTEXITCODE) { throw 'app publish failed' }
+New-Item -ItemType Directory $app | Out-Null
+Copy-Item (Join-Path $root 'desktop\target\release\ChestCounterSquad.exe') $app
+Copy-Item $engine (Join-Path $app 'engine') -Recurse
 Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path $root 'NOTICE.md') $app
 
 Write-Host '== squad server'

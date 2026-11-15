@@ -17,7 +17,7 @@ var data = Arg("--data") ?? Path.Combine(Path.GetTempPath(), "cc-devhost");
 var port = int.TryParse(Arg("--port"), out var p) ? p : LocalServer.DefaultPort;
 var squadServer = Arg("--server");
 var demos = Path.Combine(data, "Demos");
-var webRoot = Arg("--web") ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "ChestCounter.App", "wwwroot"));
+var webRoot = Arg("--web") ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src", "ChestCounter.Host", "wwwroot"));
 Directory.CreateDirectory(demos);
 
 const string Me = "11110000111100001111000011110000";

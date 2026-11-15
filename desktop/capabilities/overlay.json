@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "The overlay page (served by the local engine) may move its own window and ask the shell to lay it out. The main window gets no Tauri access at all.",
+  "windows": ["overlay"],
+  "remote": { "urls": ["http://127.0.0.1:*/*"] },
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "allow-overlay-layout",
+    "allow-overlay-scale",
+    "allow-overlay-menu"
+  ]
+}

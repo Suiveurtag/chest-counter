@@ -14,7 +14,7 @@ license texts are reproduced at the end of this file.
 
 - `Reference/ReferenceCompat.cs`: stand-ins for the reference types the two files above expect.
 - Replay readiness rules in `Tracking.cs` (live flag, key written, size stable).
-- The "start with Fortnite" standby idea (`src/ChestCounter.App/Startup.cs`, after the reference's `FortniteWatch.cs`).
+- The "start with Fortnite" standby idea (`desktop/src/startup.rs`, after the reference's `FortniteWatch.cs`).
 - The native overlay's window technique (`OverlayWindow.cs`, after the reference's `NativeOverlay.cs`): rewritten
   to draw with per-pixel alpha.
 

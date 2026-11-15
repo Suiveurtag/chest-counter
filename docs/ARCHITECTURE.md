@@ -7,17 +7,22 @@ or not shown; nothing is estimated to fill a gap. Solo counting never depends on
  Fortnite ──writes──▶ Demos\*.replay
                           │  (file events + periodic scan)
                           ▼
- ┌──────────── ChestCounterSquad.exe ─────────────────────────────────────────┐
+ ┌──────────── engine\ChestCounterEngine.exe (.NET, no window) ───────────────┐
  │  ReplayTracker ─▶ ReplayAnalyzer (reference, unchanged) ─▶ LocalDb (SQLite) │
  │                                                     │            │         │
  │                                                     │        outbox        │
  │                                                     ▼            ▼         │
  │  ChestEngine (facade) ◀──────────────────────── SyncService ◀─WebSocket──┐ │
  │       │  Changed("tracking" | "matches" | "sync" | "settings")            │ │
- │       ├─▶ LocalServer: 127.0.0.1 HTTP + SSE ─▶ WebView2 window (React)    │ │
+ │       ├─▶ LocalServer: 127.0.0.1 HTTP + SSE ─▶ pages (React UI, overlay)  │ │
  │       │                                   └──▶ /obs page (OBS source)     │ │
- │       └─▶ TrayContext ─▶ OverlayWindow (layered, GDI+), tray, hotkeys     │ │
- └───────────────────────────────────────────────────────────────────────────┼─┘
+ │       └─▶ stdout JSON lines ("ready", "changed", "pickFolder")            │ │
+ └───────┬───────────────────────────────────────────────────────────────────┼─┘
+         │ stdin/stdout                                                       │
+ ┌───────▼──── ChestCounterSquad.exe (Tauri, Rust) ──────────┐                │
+ │  main window + overlay window (WebView2), tray, shortcuts, │                │
+ │  Run-key startup, standby, one instance per data folder    │                │
+ └────────────────────────────────────────────────────────────┘                │
                                                                              │ HTTPS
                                                         Squad server (Docker, SQLite)
 ```
@@ -78,22 +83,34 @@ Kestrel on `127.0.0.1:47821` (another free port if that one is taken). Requests 
 receives the token by script injection limited to that origin; it never appears in the address bar. Changes are
 pushed to the page by server-sent events naming a topic, and the page reloads only what that topic affects.
 
-## Desktop shell (`src/ChestCounter.App`)
+## Engine host (`src/ChestCounter.Host`)
 
-- `Program.cs`: one instance per data folder (named mutex; a second launch asks the first to show itself).
-- `MainForm`: WebView2 pointed at the local API, dark title bar, remembered bounds, close to tray. External links
-  open in the default browser. Without the WebView2 runtime it offers the same interface in the browser.
-- `OverlayWindow`: a `WS_EX_LAYERED | TOPMOST | TOOLWINDOW | NOACTIVATE` window drawn with GDI+ and
-  `UpdateLayeredWindow` (per-pixel alpha). `WS_EX_TRANSPARENT` is added when locked so clicks reach the game. It
-  never takes focus. Position, size and opacity are saved through the engine's settings.
-- `Hotkeys`: `RegisterHotKey` on a message-only window, parsed from the overlay settings.
-- `Startup`: the per-user Run key for "start with Windows". "Start with Fortnite" registers a windowless
+The engine and the local API in a windowless process (`ChestCounterEngine.exe`). It talks to the shell with one
+JSON object per line: on stdout `ready` (URL and token), `changed` (every engine change), `pickFolder` (the
+interface asked for a folder, which the shell draws); on stdin `pickedFolder` and `quit`. It exits when its stdin
+closes, so it never outlives the shell, even a killed one. It opens Explorer itself.
+
+## Desktop shell (`desktop/`, Tauri 2)
+
+- `main.rs`: one instance per data folder (named mutex, same names as before; a second launch signals the first to
+  show itself), and the `--standby` mode.
+- `engine.rs`: starts the engine from the `engine` folder next to the exe, waits for `ready`, and reads its events.
+  Small HTTP calls (`/api/settings`) go through the same local API as the pages, with the token.
+- `shell.rs`: the main window (created on first show, so starting in the tray costs no browser), pointed at the
+  local API. The token is injected by an initialization script limited to that origin. Navigation outside it goes
+  to the default browser. Close hides to the tray. Tray menu, shortcuts (global-shortcut plugin) and startup entries
+  are re-applied on every `settings` change. Window size and position: window-state plugin.
+- `overlay.rs` + `web/src/overlay.ts`: a transparent, always-on-top, `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` window
+  showing `overlay.html` from the engine. The page draws the figures and reports its size. The shell places the
+  window, shows it without activating it, and ignores the mouse when locked so clicks reach the game. Drag, wheel
+  and right-click on the page go back to the shell as commands; only those are allowed to that remote origin
+  (`capabilities/overlay.json`). The main window gets no Tauri access.
+- `startup.rs`: the per-user Run key for "start with Windows". "Start with Fortnite" registers a windowless
   `--standby` process at logon that checks the process list every few seconds and opens the app when Fortnite runs.
-- `TrayContext`: owns all of the above on the UI thread; engine events are marshalled to it and coalesced.
 
 ## Interface (`web/`)
 
-React + TypeScript + Vite, built into `src/ChestCounter.App/wwwroot`. Colour carries meaning everywhere, including
+React + TypeScript + Vite, built into `src/ChestCounter.Host/wwwroot` (two pages: `index.html`, `overlay.html`). Colour carries meaning everywhere, including
 the overlay and the OBS page: **gold** = personal, **cyan** = squad, **pink** = session, **violet** = something you
 can act on. Fonts (Bricolage Grotesque, Instrument Sans) are bundled; the app makes no external request.
 
