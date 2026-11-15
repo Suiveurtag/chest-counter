@@ -1,0 +1,32 @@
+# Squad synchronization server. Start with:  docker compose up -d
+# Settings come from a .env file next to this one (copy .env.example).
+services:
+  squad-server:
+    build:
+      context: .
+      dockerfile: src/ChestCounter.Server/Dockerfile
+    image: chest-counter-squad-server:1.0.0
+    restart: unless-stopped
+    ports:
+      - "${CC_PORT:-8080}:8080"
+    environment:
+      CC_DATABASE: /data/squads.db
+      CC_LISTEN: http://0.0.0.0:8080
+      CC_PUBLIC_URL: ${CC_PUBLIC_URL:-}
+      CC_AUTH_SECRET: ${CC_AUTH_SECRET:-}
+      CC_ADMIN_TOKEN: ${CC_ADMIN_TOKEN:-}
+      CC_REGISTRATION_KEY: ${CC_REGISTRATION_KEY:-}
+      CC_MAX_SQUAD_SIZE: ${CC_MAX_SQUAD_SIZE:-4}
+      CC_INVITE_TTL_HOURS: ${CC_INVITE_TTL_HOURS:-168}
+      CC_TRUST_PROXY: ${CC_TRUST_PROXY:-0}
+    volumes:
+      - squad-data:/data
+    healthcheck:
+      test: ["CMD", "dotnet", "ChestCounter.Server.dll", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  squad-data:

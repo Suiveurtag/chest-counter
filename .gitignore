@@ -1,0 +1,18 @@
+bin/
+obj/
+dist/
+node_modules/
+.tools/
+.ref/
+.ref-LICENSE.txt
+reference/
+*.user
+.vs/
+*.replay
+src/ChestCounter.App/wwwroot/
+server-data/
+.env
+
+# replay parser debug dumps (Debug builds only)
+cmds/
+failed-*

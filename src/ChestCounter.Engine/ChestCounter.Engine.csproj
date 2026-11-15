@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>ChestCounter.Engine</RootNamespace>
+    <!-- Reference/ holds files taken unchanged from LED-N/Fortnite-ChestCounter: keep its warning profile for them. -->
+    <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS8629;CS0168;CS0219;CS1998;CS8619;CS8620;CS8765;CS8767</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\lib\FortniteReplayReader\FortniteReplayReader.csproj" />
+    <ProjectReference Include="..\ChestCounter.Shared\ChestCounter.Shared.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ChestCounter.Tests" />
+  </ItemGroup>
+</Project>

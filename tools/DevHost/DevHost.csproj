@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ChestCounter.DevHost</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ChestCounter.LocalApi\ChestCounter.LocalApi.csproj" />
+    <Compile Include="..\..\tests\ChestCounter.Tests\FakeReplays.cs" Link="FakeReplays.cs" />
+  </ItemGroup>
+</Project>
