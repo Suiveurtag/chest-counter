@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Home as HomeIcon, List, Settings as SettingsIcon, Users } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { BarChart3, Gem, Home as HomeIcon, List, Settings as SettingsIcon, Users } from 'lucide-react';
 import logo from './logo.png';
 import { api, useLive, type AppState } from './api';
 import { LocaleContext, makeLocale, useLocale, type Key } from './i18n';
@@ -9,12 +10,14 @@ import { Matches } from './pages/Matches';
 import { Insights } from './pages/Insights';
 import { Settings } from './pages/Settings';
 import { Onboarding } from './pages/Onboarding';
+import { Treasures } from './pages/Treasures';
+import { easeOut, useRipples } from './fx';
 
-export type Page = 'home' | 'squad' | 'matches' | 'insights' | 'settings';
+export type Page = 'home' | 'treasures' | 'squad' | 'matches' | 'insights' | 'settings';
 export interface PageProps { state: AppState; go: (page: Page) => void; patch: (settings: Record<string, unknown>) => Promise<void> }
 
 const pages: [Page, Key, typeof HomeIcon][] = [
-  ['home', 'nav.home', HomeIcon], ['squad', 'nav.squad', Users], ['matches', 'nav.matches', List],
+  ['home', 'nav.home', HomeIcon], ['treasures', 'nav.treasures', Gem], ['squad', 'nav.squad', Users], ['matches', 'nav.matches', List],
   ['insights', 'nav.insights', BarChart3], ['settings', 'nav.settings', SettingsIcon],
 ];
 
@@ -42,47 +45,70 @@ export function lastOutcomeLine(state: AppState, t: ReturnType<typeof useLocale>
 }
 
 export function App() {
-  const { data: state, reload } = useLive<AppState>('/api/state', ['tracking', 'matches', 'sync', 'settings']);
+  const { data: state, reload } = useLive<AppState>('/api/state', ['tracking', 'matches', 'sync', 'settings', 'hunt']);
   const [page, setPage] = useState<Page>('home');
+  const main = useRef<HTMLElement>(null);
   const locale = useMemo(() => makeLocale(state?.settings.language ?? 'en', state?.settings.timeFormat ?? 'auto'), [state?.settings.language, state?.settings.timeFormat]);
   useEffect(() => { document.documentElement.lang = locale.lang; }, [locale.lang]);
+  useRipples();
 
-  if (!state) return null;
+  const go = (p: Page) => {
+    setPage(p);
+    main.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  if (!state) {
+    return <div className="boot"><img src={logo} alt="" /><i /></div>;
+  }
   const patch = async (settings: Record<string, unknown>) => { await api.post('/api/settings', settings); reload(); };
-  const props: PageProps = { state, go: setPage, patch };
+  const props: PageProps = { state, go, patch };
 
   if (!state.settings.onboardingDone) {
-    return <LocaleContext.Provider value={locale}><Onboarding {...props} /></LocaleContext.Provider>;
+    return <LocaleContext.Provider value={locale}><MotionConfig reducedMotion="user"><Onboarding {...props} /></MotionConfig></LocaleContext.Provider>;
   }
 
   const status = trackingLine(state, locale.t);
   const squadActivity = state.sync.state === 'online' && (state.squad?.members.filter((m) => m.online).length ?? 0) > 1;
   return (
     <LocaleContext.Provider value={locale}>
-      <div className="shell">
-        <aside className="rail">
-          <div className="brand"><img src={logo} alt="" /><div>Chest Counter<span>Squad</span></div></div>
-          <nav className="nav">
-            {pages.map(([id, key, Icon]) => (
-              <button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => setPage(id)}>
-                <Icon size={18} /><span>{locale.t(key)}</span>
-                {id === 'squad' && squadActivity && <i className="dot" title={locale.t('squad.online')} />}
-              </button>
-            ))}
-          </nav>
-          <div className="rail-foot">
-            {state.profile && <div className="who">{state.profile.name}</div>}
-            <div className="live"><i className={`pulse ${status.tone}`} /><span>{status.text}</span></div>
-          </div>
-        </aside>
-        <main className="main">
-          {page === 'home' && <Home {...props} />}
-          {page === 'squad' && <SquadPage {...props} />}
-          {page === 'matches' && <Matches {...props} />}
-          {page === 'insights' && <Insights {...props} />}
-          {page === 'settings' && <Settings {...props} />}
-        </main>
-      </div>
+      <MotionConfig reducedMotion="user">
+        <div className="shell">
+          <motion.aside className="rail" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.7, ease: easeOut }}>
+            <div className="brand"><img src={logo} alt="" /><div>Chest Counter<span>Squad</span></div></div>
+            <nav className="nav">
+              {pages.map(([id, key, Icon], i) => (
+                <motion.button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => go(id)}
+                  initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + i * 0.05, duration: 0.5, ease: easeOut }}>
+                  {page === id && <motion.span layoutId="nav-pill" className="nav-pill" transition={{ type: 'spring', stiffness: 380, damping: 32 }} />}
+                  <Icon size={18} className="nav-icon" /><span>{locale.t(key)}</span>
+                  {id === 'squad' && squadActivity && <i className="dot" title={locale.t('squad.online')} />}
+                  {id === 'treasures' && state.totals.treasures > 0 && <i className="nav-count">{state.totals.treasures}</i>}
+                </motion.button>
+              ))}
+            </nav>
+            <div className="rail-foot">
+              {state.profile && <div className="who">{state.profile.name}</div>}
+              <div className="live"><i className={`pulse ${status.tone}`} /><AnimatePresence mode="wait">
+                <motion.span key={status.text} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }}>{status.text}</motion.span>
+              </AnimatePresence></div>
+            </div>
+          </motion.aside>
+          <main className="main" ref={main}>
+            <AnimatePresence mode="wait">
+              <motion.div key={page} className="page-frame"
+                initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }} animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: -10, filter: 'blur(6px)', transition: { duration: 0.18 } }} transition={{ duration: 0.5, ease: easeOut }}>
+                {page === 'home' && <Home {...props} />}
+                {page === 'treasures' && <Treasures {...props} />}
+                {page === 'squad' && <SquadPage {...props} />}
+                {page === 'matches' && <Matches {...props} />}
+                {page === 'insights' && <Insights {...props} />}
+                {page === 'settings' && <Settings {...props} />}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </MotionConfig>
     </LocaleContext.Provider>
   );
 }

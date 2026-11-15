@@ -13,5 +13,5 @@ export default defineConfig({
     chunkSizeWarningLimit: 900,
     rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html' } },
   },
-  server: { proxy: { '/api': 'http://127.0.0.1:47821', '/obs': 'http://127.0.0.1:47821' } },
+  server: { proxy: { '/api': 'http://127.0.0.1:47821', '/obs': 'http://127.0.0.1:47821', '/treasure-img': 'http://127.0.0.1:47821' } },
 });

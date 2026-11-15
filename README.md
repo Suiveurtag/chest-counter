@@ -16,6 +16,16 @@ memory, and injects nothing. The in-game counter is an ordinary always-on-top wi
 - **Personal history.** Every finished match is analysed once and stored locally (SQLite): chests opened, ammo
   boxes, other containers, placement, mode. Totals, sessions, per-day and per-week charts, best match, CSV export,
   backups.
+- **Treasure hunt.** Treasures found in your replays (named for sure when a golden chest carries its prize id), the
+  chance each treasure of the week and of the season has already dropped for you (with Treasure Hour boosts), your
+  collection (ticked by itself when a replay shows the prize), where your treasures came from, and chests by type.
+  Hunt data (odds, weeks, prizes, Treasure Hours) is built in and refreshed from the reference project's
+  `content/content.json`; prize pictures are fetched once from its repository or fortnite.bot and kept in the data
+  folder. Nothing about you is sent.
+- **Activity feed.** A live timeline on the home page: match in progress, replay being read, each match's chests,
+  treasures and new total, big imports summed up in one card.
+- **Chests added by hand.** For chests opened before you used the app (the pencil next to your total), with an
+  estimate from your Career match count. They stay on your PC and are never part of a squad figure.
 - **Squad totals.** Optional. Each player runs the app, and a small self-hosted server combines what each of you
   opened. Two figures are shown: *combined* (each member's lifetime total, added up) and *together* (only matches you
   played as a team). Join with a single invite link.

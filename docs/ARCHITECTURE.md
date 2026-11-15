@@ -52,6 +52,19 @@ running it twice equals running it once. The outbox row for the squad server is 
 nothing. A WebSocket pushes "squad changed" so the other members' figures update without polling; the REST state is
 always the source of truth.
 
+**Treasure hunt** (`Hunt/`). `HuntCatalog` reads the same `content.json` format as the reference project (schema 1,
+every value range-checked, pictures https only); a copy is embedded, and `HuntContent` replaces it with a higher
+revision downloaded from the reference repository (kept as `content.json` in the data folder, checked every 6 h). It
+also fetches missing prize pictures once (reference repository, then fortnite.bot) into `treasure-images/`; the
+interface ships the pictures it already knows (`web/public/treasures`). `Treasures.Build` computes the whole hunt
+view from the stored match details: chances `1 − Π(1 − p × boost)` per chest time, projections at the player's pace,
+the collection, sources, chests by type. Treasures are stored raw (prize id, item) and named at read time, so a new
+revision names old finds too. Hand-added chests and ticked prizes are settings rows, never uploaded.
+
+**Activity** (`Activity.cs`). `ActivityFeed` listens to the tracker (scan start, each file, scan end, recording
+replays) and stores one row per event in the `activity` table (last 600). A pass of 3 replays or more is one
+"import" row; otherwise each match gets its own row with its chests, treasures and the total after it.
+
 ## Shared rules (`src/ChestCounter.Shared`)
 
 `SquadAggregator` is pure and used by both the server and the tests. Squad figures are **sums of each player's own
@@ -112,7 +125,10 @@ closes, so it never outlives the shell, even a killed one. It opens Explorer its
 
 React + TypeScript + Vite, built into `src/ChestCounter.Host/wwwroot` (two pages: `index.html`, `overlay.html`). Colour carries meaning everywhere, including
 the overlay and the OBS page: **gold** = personal, **cyan** = squad, **pink** = session, **violet** = something you
-can act on. Fonts (Bricolage Grotesque, Instrument Sans) are bundled; the app makes no external request.
+can act on. Fonts (Bricolage Grotesque, Instrument Sans) are bundled. The page itself makes no external request:
+prize pictures come through the engine (`/treasure-img/{id}`). Motion uses the `motion` library (page transitions,
+dialogs, the sliding nav and segmented controls) and CSS for entrances (`fill-mode: backwards`, so hover transforms
+still apply), with `prefers-reduced-motion` honoured everywhere.
 
 ## Tests (`tests/ChestCounter.Tests`)
 

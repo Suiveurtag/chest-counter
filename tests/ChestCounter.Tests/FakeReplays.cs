@@ -30,6 +30,12 @@ public sealed record FakeReplay
     public int Other { get; init; }
     public int VehicleLoot { get; init; }
     public List<RosterEntry> Roster { get; init; } = new();
+    public int? Placement { get; init; }
+    public int? TotalPlayers { get; init; }
+    /// <summary>Chest kinds and opening times are spread over the match (DevHost: charts and Treasure Hours).</summary>
+    public bool ChestEvents { get; init; }
+    public List<TreasureInfo> Treasures { get; init; } = new();
+    public List<TeamTreasureInfo> TeamFinds { get; init; } = new();
     /// <summary>Changes the bytes without changing the match (a second recording of the same match).</summary>
     public string Padding { get; init; } = "";
 
@@ -72,6 +78,22 @@ public sealed class FakeAnalyzer : IReplayAnalyzer
             throw new InvalidDataException("not a replay");
         }
         var chests = Recount?.Invoke(r, Version) ?? r.Chests;
+        var events = new List<ChestEvent>();
+        var byKind = new Dictionary<string, int> { [Kinds.Chest] = chests, [Kinds.AmmoBox] = r.Ammo };
+        if (r.ChestEvents && chests > 0)
+        {
+            var rng = new Random(chests * 31 + r.Duration);
+            string[] kinds = { Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.BuriedChest, Kinds.RareChest, Kinds.SpriteChest, Kinds.PosterChest };
+            for (var i = 0; i < chests; i++)
+            {
+                events.Add(new ChestEvent((float)(r.Duration * (i + rng.NextDouble()) / chests), kinds[rng.Next(kinds.Length)], i < r.Destroyed));
+            }
+            byKind = events.GroupBy(e => e.Kind).ToDictionary(g => g.Key, g => g.Count());
+            byKind[Kinds.AmmoBox] = r.Ammo;
+            byKind[Kinds.FoodBox] = r.Ammo / 4;
+            byKind[Kinds.LootCannon] = r.Other / 2;
+            byKind[Kinds.OtherContainer] = r.Other - r.Other / 2;
+        }
         return new AnalyzedMatch
         {
             MatchId = r.SessionId ?? "local:" + fingerprint,
@@ -86,7 +108,13 @@ public sealed class FakeAnalyzer : IReplayAnalyzer
             ChestsDestroyed = Math.Min(r.Destroyed, chests),
             AmmoBoxesOpened = r.Ammo,
             OtherContainersOpened = r.Other,
-            ByKind = new() { [Kinds.Chest] = chests, [Kinds.AmmoBox] = r.Ammo },
+            ByKind = byKind,
+            Chests = events,
+            Placement = r.Placement,
+            TotalPlayers = r.TotalPlayers,
+            Treasures = r.Treasures,
+            TeamTreasures = r.TeamFinds.Count,
+            TeamFinds = r.TeamFinds,
             Roster = r.Roster,
             UnrecordedVehicleLoot = r.VehicleLoot,
             ParserVersion = Version,

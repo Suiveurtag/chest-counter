@@ -48,7 +48,7 @@ internal static class Program
         ChestEngine engine;
         try
         {
-            engine = new ChestEngine(new EngineOptions { DataDir = dataDir });
+            engine = new ChestEngine(new EngineOptions { DataDir = dataDir, OnlineContent = true });
         }
         catch (Exception ex)
         {

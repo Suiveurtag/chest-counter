@@ -2,17 +2,43 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ---- types: mirror of the engine's records (camelCase JSON) ----------------------------------------------------
 
+/** What a treasure was. kind: a hunt kind ('jam', 'pirate-shop'...), 'gizmo' (item says which), 'golden' (unknown prize), 'unknown'. */
+export interface TreasureTag { kind: string; item?: string; name?: string; prizeKey?: string; golden: boolean; team: boolean }
 export interface MatchSummary {
   matchId: string; when: string; startUtc?: string; playlist?: string; durationSeconds?: number; placement?: number;
   totalPlayers?: number; eliminations?: number; chests: number; chestsDestroyed: number; ammoBoxes: number;
   otherContainers: number; teamObserved: number; counted: boolean; notCountedReason?: string; possiblyIncomplete: boolean;
   identityReliable: boolean; parserVersion: number; playerName?: string; replayFile?: string; sessionId?: number;
+  treasures?: TreasureTag[];
 }
 export interface SessionTotals { id?: number; startedUtc: string; chests: number; matches: number }
 export interface Totals {
   chests: number; matches: number; average: number; chestsDestroyed: number; ammoBoxes: number; otherContainers: number;
   possiblyIncompleteMatches: number; best?: MatchSummary; lastMatch?: MatchSummary; session: SessionTotals;
+  manualChests: number; treasures: number;
 }
+
+// ---- treasure hunt ----
+export interface ManualEntry { id: string; chests: number; atUtc: string; weekFromUtc?: string }
+export interface HuntHour { start: string; end: string; boosts: Record<string, number>; confirmed: boolean }
+export interface HuntOdds { kind: string; oneIn: number; weekly: boolean }
+export interface ChanceView { kind: string; oneIn: number; weekly: boolean; p: number; logNever: number; expected: number; chests: number; atPace?: number }
+export interface HuntPrizeView { id: string; kind: string; name: string; image: string; obtained?: 'auto' | 'manual' }
+export interface HuntWeekView { number: number; from: string; to: string; title: string; prizes: HuntPrizeView[] }
+export interface TreasureView {
+  matchId: string; matchWhen: string; tag: TreasureTag; timeSeconds?: number; timeExact: boolean; sourceKind?: string;
+  sourceDestroyed: boolean; sourceIsChest: boolean; sourceCertain: boolean; teammate?: string;
+}
+export interface SourceCount { kind: string; destroyed: boolean; isChest: boolean; count: number }
+export interface HuntReport {
+  revision: number; oddsSource: string; hoursSource: string; nowUtc: string; huntStart: string; huntEnd: string; over: boolean;
+  hours: HuntHour[]; odds: HuntOdds[]; week?: HuntWeekView; weekChests: number; weekManual: number; seasonChests: number; manual: number;
+  boostedChests: number; pirateHalfway: number; weekChances: ChanceView[]; seasonChances: ChanceView[]; gizmosFound: number;
+  chestsSinceGizmo?: number; pirateShop?: HuntPrizeView; weeks: HuntWeekView[]; collectionGot: number; collectionTotal: number;
+  finds: TreasureView[]; treasures: number; teamTreasures: number; sources: SourceCount[]; byKind: Record<string, number>;
+  destroyed: number; matches: number; chests: number; perMatch: number; manualEntries: ManualEntry[];
+}
+export interface ActivityItem { id: number; atUtc: string; kind: string; data: Record<string, any> }
 export interface OverlaySettings {
   enabled: boolean; locked: boolean; opacity: number; scale: number; x?: number; y?: number; showPersonal: boolean;
   showSquad: boolean; showSession: boolean; showLastMatch: boolean; showMembers: boolean; squadScope: 'combined' | 'shared';
@@ -64,7 +90,7 @@ export interface MatchDetail {
   detail?: {
     byKind: Record<string, number>; chests: { timeSeconds: number; kind: string; destroyed: boolean }[];
     roster: { playerId?: string; name: string; isBot: boolean; observedChests: number }[];
-    treasures: { prizeId?: string; rawItem: string; timeSeconds?: number; sourceKind: string; fromGoldenChest: boolean }[]; teamTreasures: number;
+    treasures: { prizeId?: string; rawItem: string; timeSeconds?: number; sourceKind: string; fromGoldenChest: boolean; sourceDestroyed?: boolean }[]; teamTreasures: number;
   };
 }
 export interface Diagnostics {

@@ -30,7 +30,13 @@ public static class Kinds
 public sealed record ChestEvent(float TimeSeconds, string Kind, bool Destroyed);
 
 /// <summary>A treasure the replay shows the player obtained. Raw ids are kept: naming them is a display concern.</summary>
-public sealed record TreasureInfo(string? PrizeId, string RawItem, float? TimeSeconds, string SourceKind, bool FromGoldenChest, bool SourceCertain);
+public sealed record TreasureInfo(string? PrizeId, string RawItem, float? TimeSeconds, string SourceKind, bool FromGoldenChest, bool SourceCertain,
+    bool SourceDestroyed = false, bool TimeExact = true, bool? SourceIsChest = null);
+
+/// <summary>
+/// A treasure a teammate found, deduced from what the hunt shared with the player (an estimate: never in a total).
+/// </summary>
+public sealed record TeamTreasureInfo(string? PrizeId, string RawItem, float? TimeSeconds, string? Teammate, bool FromGoldenChest);
 
 /// <summary>Everything the engine keeps from the analysis of one replay.</summary>
 public sealed record AnalyzedMatch
@@ -59,6 +65,7 @@ public sealed record AnalyzedMatch
     public List<RosterEntry> Roster { get; init; } = new();
     public List<TreasureInfo> Treasures { get; init; } = new();
     public int TeamTreasures { get; init; }
+    public List<TeamTreasureInfo> TeamFinds { get; init; } = new();
     /// <summary>Loot piles along the player's drives that no recorded chest explains (3 or more: chests are missing).</summary>
     public int UnrecordedVehicleLoot { get; init; }
     public int ParserVersion { get; init; }
@@ -182,8 +189,10 @@ public sealed class FortniteReplayAnalyzer : IReplayAnalyzer
             ByKind = byKind,
             Chests = r.Chests.Select(c => new ChestEvent(c.TimeSeconds, Kinds.FromReference(c.Kind), c.Destroyed)).ToList(),
             Roster = r.TeamChests.Select(t => new RosterEntry(string.IsNullOrWhiteSpace(t.EpicId) ? null : t.EpicId.Trim().ToLowerInvariant(), t.Name, t.IsBot, t.Chests)).ToList(),
-            Treasures = r.TreasureFinds.Select(t => new TreasureInfo(t.PrizeId, t.RawItem, t.ObtainedAtSeconds, Kinds.FromReference(t.SourceKind), t.FromGoldenChest, t.SourceCertain)).ToList(),
+            Treasures = r.TreasureFinds.Select(t => new TreasureInfo(t.PrizeId, t.RawItem, t.ObtainedAtSeconds, Kinds.FromReference(t.SourceKind),
+                t.FromGoldenChest, t.SourceCertain, t.SourceDestroyed, t.TimeExact, t.SourceIsChest)).ToList(),
             TeamTreasures = r.TeamTreasureFinds.Count,
+            TeamFinds = r.TeamTreasureFinds.Select(t => new TeamTreasureInfo(t.PrizeId, t.RawItem, t.ObtainedAtSeconds, t.Teammate, t.FromGoldenChest)).ToList(),
             UnrecordedVehicleLoot = r.UnrecordedVehicleLoot,
             ParserVersion = r.AnalyzerVersion,
         };

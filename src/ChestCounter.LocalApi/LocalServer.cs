@@ -40,6 +40,7 @@ public sealed class LocalServer : IAsyncDisposable
     private readonly IShell _shell;
     private readonly ConcurrentDictionary<Guid, Channel<string>> _listeners = new();
     private WebApplication? _app;
+    private string? _webRoot;
 
     public int Port { get; private set; }
     public string Token { get; }
@@ -84,6 +85,7 @@ public sealed class LocalServer : IAsyncDisposable
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, Port));
         var app = builder.Build();
+        _webRoot = webRoot != null && Directory.Exists(webRoot) ? Path.GetFullPath(webRoot) : null;
 
         // Only requests addressed to this machine by its loopback name (defeats DNS rebinding).
         app.Use(async (c, next) =>
@@ -207,6 +209,29 @@ public sealed class LocalServer : IAsyncDisposable
             }
         });
 
+        // ---- treasure hunt, hand-added chests, activity ----
+        app.MapGet("/api/hunt", () => Json(e.GetHunt()));
+        app.MapPost("/api/hunt/obtained", (ObtainedBody b) => { e.SetObtained(b.Id ?? "", b.On); return Json(new { ok = true }); });
+        app.MapPost("/api/manual", (ManualBody b) => Json(e.AddManual(b.Chests, b.ThisWeek)));
+        app.MapPost("/api/manual/remove", (RemoveManualBody b) => { e.RemoveManual(b.Id ?? ""); return Json(new { ok = true }); });
+        app.MapGet("/api/activity", (int? limit) => Json(e.GetActivity(limit ?? 80)));
+        // Prize pictures: shipped with the interface when known, else fetched once from fortnite.bot and kept.
+        app.MapGet("/treasure-img/{id}", async (string id, HttpContext c) =>
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-z0-9][a-z0-9-]{0,39}$")) return Results.NotFound();
+            if (_webRoot != null && Path.Combine(_webRoot, "treasures", id + ".webp") is var bundled && File.Exists(bundled))
+            {
+                c.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.File(bundled, "image/webp");
+            }
+            if (await e.Hunt.ImageAsync(id, c.RequestAborted) is { } image)
+            {
+                c.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.File(image.Path, image.ContentType);
+            }
+            return Results.NotFound();
+        });
+
         // ---- squad ----
         app.MapPost("/api/squad/connect", async (ConnectBody b) =>
         {
@@ -313,4 +338,7 @@ public sealed class LocalServer : IAsyncDisposable
     private sealed record NameBody(string? Name);
     private sealed record JoinBody(string? Code, string? Server, string? DisplayName, string? RegistrationKey);
     private sealed record RemoveBody(string? UserId);
+    private sealed record ObtainedBody(string? Id, bool On);
+    private sealed record ManualBody(int Chests, bool ThisWeek);
+    private sealed record RemoveManualBody(string? Id);
 }

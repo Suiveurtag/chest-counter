@@ -80,6 +80,23 @@ public sealed class ReplayTracker
     /// <summary>Raised when a stored match was added or replaced.</summary>
     public event Action<MatchRow>? MatchSaved;
 
+    /// <summary>A pass is about to read this many replays (the activity feed groups big imports).</summary>
+    public event Action<int>? ScanStarting;
+
+    /// <summary>One replay is about to be read (its name and size).</summary>
+    public event Action<string, long>? FileStarting;
+
+    /// <summary>One replay was read.</summary>
+    public event Action<FileOutcome>? FileProcessed;
+
+    /// <summary>A pass that read at least one replay is over.</summary>
+    public event Action<ScanSummary>? ScanFinished;
+
+    private void Raise(Action notify)
+    {
+        try { notify(); } catch { /* a listener must not stop the import */ }
+    }
+
     /// <summary>True while a replay is waiting (a match is being recorded or has just ended): check again soon.</summary>
     public bool HasPending => _status.Pending.Count > 0;
 
@@ -141,11 +158,14 @@ public sealed class ReplayTracker
             }
 
             var outcomes = new List<FileOutcome>();
+            Raise(() => ScanStarting?.Invoke(ready.Count));
             for (var i = 0; i < ready.Count && !ct.IsCancellationRequested; i++)
             {
                 var file = ready[i];
                 Publish(_status with { State = "scanning", FolderFound = true, ReplayFiles = all.Count, Pending = pending, ScanIndex = i, ScanTotal = ready.Count, CurrentFile = file.Name });
+                Raise(() => FileStarting?.Invoke(file.Name, file.Length));
                 var outcome = Process(file, force);
+                Raise(() => FileProcessed?.Invoke(outcome));
                 outcomes.Add(outcome);
                 _lastSeenSize.Remove(file.FullName);
                 _status = _status with { LastOutcome = outcome, LastOutcomeUtc = _clock.UtcNow, ScanIndex = i + 1 };
@@ -157,7 +177,7 @@ public sealed class ReplayTracker
             }
 
             Publish(_status with { State = "idle", ScanIndex = 0, ScanTotal = 0, CurrentFile = null, LastScanUtc = _clock.UtcNow });
-            return new ScanSummary(outcomes.Count,
+            var summary = new ScanSummary(outcomes.Count,
                 outcomes.Count(o => o.Status == FileStatus.Counted && !o.Replaced),
                 outcomes.Count(o => o.Replaced),
                 outcomes.Count(o => o.Status == FileStatus.Duplicate),
@@ -165,6 +185,8 @@ public sealed class ReplayTracker
                 outcomes.Count(o => o.Status == FileStatus.Incomplete),
                 outcomes.Count(o => o.Status == FileStatus.Error),
                 outcomes);
+            Raise(() => ScanFinished?.Invoke(summary));
+            return summary;
         }
     }
 

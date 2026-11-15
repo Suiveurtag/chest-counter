@@ -15,6 +15,8 @@ public sealed record EngineOptions
     public ISyncTransport Transport { get; init; } = new NetworkTransport();
     /// <summary>Used when no folder was chosen. Null = Fortnite's own folder.</summary>
     public string? DefaultDemosFolder { get; init; }
+    /// <summary>Fetch newer treasure hunt data and prize pictures (off in tests).</summary>
+    public bool OnlineContent { get; init; }
 }
 
 // ---- what the interface reads -----------------------------------------------------------------------------------
@@ -22,12 +24,12 @@ public sealed record EngineOptions
 public sealed record MatchSummary(string MatchId, DateTime When, DateTime? StartUtc, string? Playlist, int? DurationSeconds, int? Placement,
     int? TotalPlayers, int? Eliminations, int Chests, int ChestsDestroyed, int AmmoBoxes, int OtherContainers, int TeamObserved,
     bool Counted, string? NotCountedReason, bool PossiblyIncomplete, bool IdentityReliable, int ParserVersion, string? PlayerName,
-    string? ReplayFile, long? SessionId);
+    string? ReplayFile, long? SessionId, List<TreasureTag>? Treasures = null);
 
 public sealed record SessionTotals(long? Id, DateTime StartedUtc, int Chests, int Matches);
 
 public sealed record Totals(int Chests, int Matches, double Average, int ChestsDestroyed, int AmmoBoxes, int OtherContainers,
-    int PossiblyIncompleteMatches, MatchSummary? Best, MatchSummary? LastMatch, SessionTotals Session);
+    int PossiblyIncompleteMatches, MatchSummary? Best, MatchSummary? LastMatch, SessionTotals Session, int ManualChests = 0, int Treasures = 0);
 
 public sealed record RecordingHint(string State, string? Detail);
 
@@ -85,6 +87,9 @@ public sealed class ChestEngine : IDisposable
     public LocalDb Db { get; }
     public ReplayTracker Tracker { get; }
     public SyncService Sync { get; }
+    public HuntContent Hunt { get; }
+    public ActivityFeed Activity { get; }
+    private readonly CancellationTokenSource _stop = new();
 
     /// <summary>Something the interface shows has changed. The argument names what: "tracking", "matches", "sync", "settings".</summary>
     public event Action<string>? Changed;
@@ -131,6 +136,93 @@ public sealed class ChestEngine : IDisposable
             Sync.Wake();
         };
         Sync.Changed += () => Changed?.Invoke("sync");
+        Hunt = new HuntContent(options.DataDir, options.OnlineContent);
+        Hunt.Changed += () =>
+        {
+            Activity!.Add("content", new { revision = Hunt.Catalog.Revision });
+            Changed?.Invoke("hunt");
+        };
+        Activity = new ActivityFeed(Db, options.Clock, () => Hunt.Catalog, key => GetTotals(key).Chests + ManualChests);
+        Activity.Attach(Tracker);
+        Activity.Changed += () => Changed?.Invoke("activity");
+    }
+
+    // ---- treasure hunt ------------------------------------------------------------------------------------------
+
+    public List<ManualEntry> ManualEntries
+    {
+        get
+        {
+            try { return Db.GetSetting("manualChests") is { } json ? Wire.Deserialize<List<ManualEntry>>(json) ?? new() : new(); }
+            catch { return new(); }
+        }
+    }
+
+    public int ManualChests => ManualEntries.Sum(e => e.Chests);
+
+    public HashSet<string> ObtainedPrizes
+    {
+        get
+        {
+            try { return Db.GetSetting("obtainedPrizes") is { } json ? Wire.Deserialize<HashSet<string>>(json) ?? new() : new(); }
+            catch { return new(); }
+        }
+    }
+
+    /// <summary>Adds chests by hand (a negative number removes some). Local only: never sent to the squad.</summary>
+    public ManualEntry AddManual(int chests, bool thisWeek)
+    {
+        if (chests == 0 || Math.Abs(chests) > 1_000_000) throw new ArgumentOutOfRangeException(nameof(chests), "Enter a number between -1,000,000 and 1,000,000.");
+        var now = _o.Clock.UtcNow;
+        var entry = new ManualEntry(Guid.NewGuid().ToString("N")[..12], chests, now, thisWeek ? Hunt.Catalog.WeekOf(now)?.From : null);
+        var list = ManualEntries;
+        list.Add(entry);
+        Db.SetSetting("manualChests", Wire.Serialize(list));
+        Activity.Add("manual", new { chests, thisWeek = entry.WeekFromUtc != null, total = PersonalTotal() });
+        Changed?.Invoke("matches");
+        return entry;
+    }
+
+    public void RemoveManual(string id)
+    {
+        var list = ManualEntries;
+        var entry = list.FirstOrDefault(e => e.Id == id);
+        if (entry == null) return;
+        list.Remove(entry);
+        Db.SetSetting("manualChests", list.Count == 0 ? null : Wire.Serialize(list));
+        Activity.Add("manualRemoved", new { chests = entry.Chests, total = PersonalTotal() });
+        Changed?.Invoke("matches");
+    }
+
+    public void SetObtained(string prizeId, bool on)
+    {
+        var prize = Hunt.Catalog.Prize(prizeId) ?? throw new ArgumentException("Unknown treasure.");
+        var set = ObtainedPrizes;
+        if (on ? !set.Add(prizeId) : !set.Remove(prizeId)) return;
+        Db.SetSetting("obtainedPrizes", Wire.Serialize(set));
+        if (on) Activity.Add("collected", new { id = prize.Id, name = prize.Name, kind = prize.Kind });
+        Changed?.Invoke("hunt");
+    }
+
+    private int PersonalTotal() => GetTotals(CurrentProfile()?.Key).Chests + ManualChests;
+
+    public HuntReport GetHunt()
+    {
+        var key = CurrentProfile()?.Key;
+        var matches = key == null ? new() : Db.CountedWithDetail(key);
+        return Treasures.Build(Hunt.Catalog, matches, ManualEntries, ObtainedPrizes, _o.Clock.UtcNow);
+    }
+
+    public List<ActivityItem> GetActivity(int limit) => Activity.Recent(limit);
+
+    private async Task RefreshContentLoop()
+    {
+        while (!_stop.IsCancellationRequested)
+        {
+            await Hunt.RefreshAsync(_stop.Token);
+            try { await Task.Delay(TimeSpan.FromHours(6), _stop.Token); }
+            catch (OperationCanceledException) { return; }
+        }
     }
 
     /// <summary>Opens a tracking session and prepares the re-analysis a parser update calls for. No threads yet.</summary>
@@ -153,8 +245,10 @@ public sealed class ChestEngine : IDisposable
         if (_started) return;
         _started = true;
         Begin();
+        Activity.Add("started", new { version = AppVersion, folder = DemosFolder });
         _loop.Start();
         Sync.Start();
+        _ = Task.Run(RefreshContentLoop);
     }
 
     // ---- settings ---------------------------------------------------------------------------------------------
@@ -277,8 +371,13 @@ public sealed class ChestEngine : IDisposable
             all.Sum(m => m.Chests), all.Count, all.Count == 0 ? 0 : Math.Round((double)all.Sum(m => m.Chests) / all.Count, 1),
             all.Sum(m => m.ChestsDestroyed), all.Sum(m => m.AmmoBoxes), all.Sum(m => m.OtherContainers), all.Count(m => m.PossiblyIncomplete),
             best == null ? null : Summary(best), all.Count == 0 ? null : Summary(all[0]),
-            new SessionTotals(session?.Id, session?.StartedUtc ?? _o.Clock.UtcNow, inSession.Sum(m => m.Chests), inSession.Count));
+            new SessionTotals(session?.Id, session?.StartedUtc ?? _o.Clock.UtcNow, inSession.Sum(m => m.Chests), inSession.Count),
+            ManualChests, profileKey == null ? 0 : Db.TreasureCount(profileKey));
     }
+
+    /// <summary>The summary of a match with the treasures of its replay, named.</summary>
+    public MatchSummary SummaryWithTreasures(MatchRow m) =>
+        Summary(m) with { Treasures = Treasures.Tags(Db.GetMatchDetail(m.MatchId), Hunt.Catalog) };
 
     public AppState GetState()
     {
@@ -286,7 +385,7 @@ public sealed class ChestEngine : IDisposable
         var profile = CurrentProfile(profiles);
         var counts = Db.FileStatusCounts();
         var tracking = Tracker.Status;
-        var recent = profile == null ? new() : Db.Matches(new LocalDb.MatchFilter(ProfileKey: profile.Key, Limit: 8)).Select(Summary).ToList();
+        var recent = profile == null ? new() : Db.Matches(new LocalDb.MatchFilter(ProfileKey: profile.Key, Limit: 8)).Select(SummaryWithTreasures).ToList();
         return new AppState(AppVersion, _o.Analyzer.Version, _o.DataDir, Settings, tracking,
             new ImportStatus(tracking.ReplayFiles, counts.GetValueOrDefault(FileStatus.Counted), counts.GetValueOrDefault(FileStatus.Duplicate),
                 counts.GetValueOrDefault(FileStatus.NotCounted), counts.GetValueOrDefault(FileStatus.Incomplete), counts.GetValueOrDefault(FileStatus.Error),
@@ -296,9 +395,9 @@ public sealed class ChestEngine : IDisposable
 
     public List<MatchSummary> GetMatches(DateTime? fromUtc, DateTime? toUtc, long? sessionId, bool? counted, int limit, int offset) =>
         Db.Matches(new LocalDb.MatchFilter(counted == false ? null : CurrentProfile()?.Key, fromUtc, toUtc, sessionId, counted, Math.Clamp(limit, 1, 1000), Math.Max(0, offset)))
-            .Select(Summary).ToList();
+            .Select(SummaryWithTreasures).ToList();
 
-    public object? GetMatch(string matchId) => Db.GetMatch(matchId) is { } m ? new { match = Summary(m), detail = Db.GetMatchDetail(matchId), m.Map, m.GameVersion, m.PlayerId, m.FirstAnalyzedUtc, m.AnalyzedUtc } : null;
+    public object? GetMatch(string matchId) => Db.GetMatch(matchId) is { } m ? new { match = SummaryWithTreasures(m), detail = Db.GetMatchDetail(matchId), m.Map, m.GameVersion, m.PlayerId, m.FirstAnalyzedUtc, m.AnalyzedUtc } : null;
 
     public List<SessionTotals> GetSessions()
     {
@@ -347,7 +446,7 @@ public sealed class ChestEngine : IDisposable
         // "Last match": the latest shared squad match when it is this player's latest match too, else their own.
         var useShared = lastShared != null && totals.LastMatch != null && lastShared.MatchId == totals.LastMatch.MatchId;
         return new OverlayData(
-            totals.Chests,
+            totals.Chests + totals.ManualChests,
             squad == null ? null : settings.SquadScope == "shared" ? squad.SharedChests : squad.CombinedMemberChests,
             settings.SquadScope,
             totals.Session.Chests,
@@ -413,7 +512,9 @@ public sealed class ChestEngine : IDisposable
 
     public void Dispose()
     {
+        _stop.Cancel();
         _loop.Dispose();
+        Hunt.Dispose();
         Sync.Dispose();
         if (_session != null)
         {

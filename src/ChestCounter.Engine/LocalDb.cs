@@ -52,7 +52,11 @@ public sealed record MatchRow
 }
 
 /// <summary>The parts of a match kept as JSON: only read when one match is opened.</summary>
-public sealed record MatchDetail(Dictionary<string, int> ByKind, List<ChestEvent> Chests, List<RosterEntry> Roster, List<TreasureInfo> Treasures, int TeamTreasures);
+public sealed record MatchDetail(Dictionary<string, int> ByKind, List<ChestEvent> Chests, List<RosterEntry> Roster, List<TreasureInfo> Treasures, int TeamTreasures,
+    List<TeamTreasureInfo>? TeamFinds = null);
+
+/// <summary>One line of the activity feed. <paramref name="Data"/> is JSON whose shape depends on <paramref name="Kind"/>.</summary>
+public sealed record ActivityRow(long Id, DateTime AtUtc, string Kind, string Data);
 
 public sealed record FileRow(string FileKey, string FileName, long Size, string? Fingerprint, string Status, string? MatchId, string? Detail,
     int ParserVersion, DateTime ProcessedUtc);
@@ -68,7 +72,7 @@ public sealed record ProfileRow(string Key, string Name, int Matches, int Chests
 /// </summary>
 public sealed class LocalDb : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
     private readonly SqliteConnection _c;
     private readonly object _gate = new();
 
@@ -122,7 +126,32 @@ public sealed class LocalDb : IDisposable
                 COMMIT;
                 """);
         }
+        if (version < 2)
+        {
+            Exec("""
+                BEGIN;
+                CREATE TABLE activity(id INTEGER PRIMARY KEY AUTOINCREMENT, at_utc TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
+                PRAGMA user_version = 2;
+                COMMIT;
+                """);
+        }
     }
+
+    // ---- activity feed ----------------------------------------------------------------------------------------
+
+    public long AddActivity(string kind, string data, DateTime utc)
+    {
+        lock (_gate)
+        {
+            Exec("INSERT INTO activity(at_utc,kind,data) VALUES($a,$k,$d)", ("$a", Iso(utc)), ("$k", kind), ("$d", data));
+            var id = Convert.ToInt64(Scalar("SELECT last_insert_rowid()"));
+            Exec("DELETE FROM activity WHERE id <= $i - 600", ("$i", id));
+            return id;
+        }
+    }
+
+    public List<ActivityRow> Activities(int limit) => Query("SELECT id,at_utc,kind,data FROM activity ORDER BY id DESC LIMIT $l",
+        r => new ActivityRow(r.GetInt64(0), ParseDate(r.GetValue(1))!.Value, r.GetString(2), r.GetString(3)), ("$l", limit));
 
     // ---- plumbing ---------------------------------------------------------------------------------------------
 
@@ -326,6 +355,22 @@ public sealed class LocalDb : IDisposable
         return imported;
     }
 
+    /// <summary>Every counted match of a profile with its detail, most recent first (one query).</summary>
+    public List<(MatchRow Match, MatchDetail? Detail)> CountedWithDetail(string profileKey) => Query(
+        "SELECT * FROM matches WHERE profile_key=$pk AND counted=1 ORDER BY COALESCE(start_utc, first_analyzed_utc) DESC, match_id",
+        r => (ReadMatch(r), ReadDetail(Val(r, "detail_json") as string)), ("$pk", profileKey));
+
+    /// <summary>Treasures the player obtained in counted matches (read inside the stored detail, no decoding).</summary>
+    public int TreasureCount(string profileKey) => Convert.ToInt32(Scalar(
+        "SELECT COALESCE(SUM(COALESCE(json_array_length(detail_json, '$.treasures'), 0)), 0) FROM matches WHERE profile_key=$pk AND counted=1",
+        ("$pk", profileKey)) ?? 0);
+
+    private static MatchDetail? ReadDetail(string? json)
+    {
+        if (json == null) return null;
+        try { return Wire.Deserialize<MatchDetail>(json); } catch { return null; }
+    }
+
     public MatchDetail? GetMatchDetail(string matchId) =>
         Scalar("SELECT detail_json FROM matches WHERE match_id=$m", ("$m", matchId)) is string json ? Wire.Deserialize<MatchDetail>(json) : null;
 
@@ -340,7 +385,7 @@ public sealed class LocalDb : IDisposable
         {
             if (replace)
             {
-                var detail = Wire.Serialize(new MatchDetail(m.ByKind, m.Chests, m.Roster, m.Treasures, m.TeamTreasures));
+                var detail = Wire.Serialize(new MatchDetail(m.ByKind, m.Chests, m.Roster, m.Treasures, m.TeamTreasures, m.TeamFinds));
                 Exec("""
                     INSERT INTO matches(match_id,identity_reliable,player_id,player_name,profile_key,start_utc,duration_s,playlist,map,game_version,
                         placement,total_players,eliminations,chests,chests_destroyed,ammo_boxes,other_containers,team_observed,unrecorded_vehicle_loot,

@@ -12,4 +12,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="ChestCounter.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Treasure hunt data built in; a newer revision from the reference project replaces it at run time. -->
+    <EmbeddedResource Include="Hunt\content.json" LogicalName="ChestCounter.Engine.Hunt.content.json" />
+  </ItemGroup>
 </Project>

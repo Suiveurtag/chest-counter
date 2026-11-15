@@ -24,6 +24,37 @@ const string Me = "11110000111100001111000011110000";
 var mates = new[] { ("Mika", "2222000022220000222200002222aaaa"), ("Soren", "3333000033330000333300003333bbbb"), ("Inès", "4444000044440000444400004444cccc") };
 var sharedMatches = new List<(string Id, DateTime Start, int Players, string Playlist)>();
 
+// Fixture treasures: rolled per chest with the hunt's odds (golden prizes carry the real prize ids of their week).
+var huntWeeks = new (DateTime From, string Pickaxe, string Jam, string Loading)[]
+{
+    (new DateTime(2026, 11, 1, 14, 0, 0, DateTimeKind.Utc), "DelilahPrize:dpid_item2", "DelilahPrize:dpid_item3", "DelilahPrize:dpid_item4"),
+    (new DateTime(2026, 11, 8, 14, 0, 0, DateTimeKind.Utc), "DelilahPrize:dpid_item15", "DelilahPrize:dpid_item16", "DelilahPrize:dpid_item17"),
+    (new DateTime(2026, 11, 15, 14, 0, 0, DateTimeKind.Utc), "DelilahPrize:dpid_item20", "DelilahPrize:dpid_item21", "DelilahPrize:dpid_item22"),
+};
+List<TreasureInfo> RollTreasures(Random rng, DateTime start, int chests, int duration)
+{
+    var list = new List<TreasureInfo>();
+    var week = huntWeeks.LastOrDefault(w => start >= w.From);
+    if (week.From == default) return list;
+    string[] gizmos = { "WID_RelicExtractor_Athena", "WID_RelicFinder_Athena", "WID_LuckyLocator_Athena", "Unknown:fixture" };
+    string[] sources = { Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.Chest, Kinds.SpriteChest, Kinds.BuriedChest, Kinds.RareChest };
+    for (var i = 0; i < chests; i++)
+    {
+        var t = (float)Math.Round(duration * rng.NextDouble());
+        var src = sources[rng.Next(sources.Length)];
+        var roll = rng.NextDouble();
+        if (roll < 1.0 / 127)
+        {
+            var g = gizmos[rng.Next(gizmos.Length)];
+            list.Add(new TreasureInfo(g.StartsWith("Unknown") ? g : null, g.StartsWith("Unknown") ? "GA_TreasureHandler" : g, t, src, false, true, rng.NextDouble() < 0.2));
+        }
+        else if (roll < 1.0 / 127 + 1.0 / 272) list.Add(new TreasureInfo(week.Loading, week.Loading, t, Kinds.Chest, true, true));
+        else if (roll < 1.0 / 127 + 1.0 / 272 + 1.0 / 391) list.Add(new TreasureInfo(week.Jam, week.Jam, t, Kinds.Chest, true, true));
+        else if (roll < 1.0 / 127 + 1.0 / 272 + 1.0 / 391 + 1.0 / 568) list.Add(new TreasureInfo(week.Pickaxe, week.Pickaxe, t, Kinds.Chest, true, true));
+    }
+    return list.OrderBy(x => x.TimeSeconds).ToList();
+}
+
 if (!args.Contains("--empty") && !Directory.EnumerateFiles(demos, "*.replay").Any())
 {
     var rng = new Random(7);
@@ -41,11 +72,18 @@ if (!args.Contains("--empty") && !Directory.EnumerateFiles(demos, "*.replay").An
             var id = $"fixture-{++n:000}";
             var roster = mates.Take(team).Select(m => new RosterEntry(m.Item2, m.Item1, false, rng.Next(0, 9))).ToList();
             if (team > 0) sharedMatches.Add((id, start, team, playlist));
+            var chests = rng.Next(6, 62);
+            var duration = rng.Next(600, 1500);
             new FakeReplay
             {
-                SessionId = id, PlayerId = Me, PlayerName = "Nova", StartUtc = start, Duration = rng.Next(600, 1500), Playlist = playlist,
-                Chests = rng.Next(6, 62), Destroyed = rng.Next(0, 4), Ammo = rng.Next(2, 16), Other = rng.Next(0, 5), Roster = roster,
-                VehicleLoot = rng.NextDouble() < 0.06 ? 3 : 0,
+                SessionId = id, PlayerId = Me, PlayerName = "Nova", StartUtc = start, Duration = duration, Playlist = playlist,
+                Chests = chests, Destroyed = rng.Next(0, 4), Ammo = rng.Next(2, 16), Other = rng.Next(0, 5), Roster = roster,
+                VehicleLoot = rng.NextDouble() < 0.06 ? 3 : 0, ChestEvents = true,
+                Placement = rng.NextDouble() < 0.18 ? 1 : rng.Next(2, playlist.Contains("Solo") ? 100 : playlist.Contains("Duo") ? 50 : 25),
+                TotalPlayers = playlist.Contains("Solo") ? 100 : playlist.Contains("Duo") ? 50 : 25,
+                Treasures = RollTreasures(rng, start, chests, duration),
+                TeamFinds = team > 0 && start >= huntWeeks[0].From && rng.NextDouble() < 0.25
+                    ? new() { new TeamTreasureInfo(null, "GA_TreasureHandler", (float)rng.Next(60, duration), roster[0].Name, false) } : new(),
             }.Write(demos, id, TimeSpan.FromDays(day) + TimeSpan.FromHours(1));
             start = start.AddMinutes(rng.Next(22, 35));
         }
@@ -57,7 +95,7 @@ if (!args.Contains("--empty") && !Directory.EnumerateFiles(demos, "*.replay").An
 
 using var engine = new ChestEngine(new EngineOptions
 {
-    DataDir = data, Analyzer = new FakeAnalyzer { Version = 17 }, Probe = new FakeProbe(), DefaultDemosFolder = demos,
+    DataDir = data, Analyzer = new FakeAnalyzer { Version = 17 }, Probe = new FakeProbe(), DefaultDemosFolder = demos, OnlineContent = true,
 });
 engine.Start();
 await using var local = new LocalServer(engine, new NoShell(), token: "dev");
@@ -95,6 +133,34 @@ if (squadServer != null && !engine.Sync.Configured)
         await http.PutAsJsonAsync("api/v1/contributions", new UploadRequest(uploads), Wire.Json);
     }
     engine.Sync.Wake();
+}
+
+if (args.Contains("--live"))
+{
+    // A fixture match every few minutes: recorded (the feed shows "match in progress"), then finalized and counted.
+    _ = Task.Run(async () =>
+    {
+        var rng = new Random();
+        for (var k = 1; ; k++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(20));
+            var id = $"live-{DateTime.UtcNow:HHmmss}";
+            var start = DateTime.UtcNow;
+            new FakeReplay { Live = true, KeyMissing = true, SessionId = id }.Write(demos, id, TimeSpan.Zero);
+            await Task.Delay(TimeSpan.FromSeconds(25));
+            var chests = rng.Next(12, 48);
+            var roster = mates.Take(3).Select(m => new RosterEntry(m.Item2, m.Item1, false, rng.Next(2, 14))).ToList();
+            var treasures = RollTreasures(rng, start, chests, 1300);
+            if (k % 2 == 1 && !treasures.Any(x => x.FromGoldenChest)) treasures.Add(new TreasureInfo(huntWeeks[2].Jam, huntWeeks[2].Jam, 488, Kinds.Chest, true, true));
+            new FakeReplay
+            {
+                SessionId = id, PlayerId = Me, PlayerName = "Nova", StartUtc = start, Duration = 1300, Playlist = "Playlist_NoBuildBR_Squad",
+                Chests = chests, Destroyed = rng.Next(0, 5), Ammo = rng.Next(4, 14), Other = rng.Next(0, 4), Roster = roster, ChestEvents = true,
+                Placement = rng.Next(1, 4) == 1 ? 1 : rng.Next(2, 20), TotalPlayers = 80, Treasures = treasures,
+            }.Write(demos, id, TimeSpan.FromMinutes(2));
+            await Task.Delay(TimeSpan.FromSeconds(150));
+        }
+    });
 }
 
 Console.WriteLine($"FIXTURE DATA. Interface: {local.Url}?token={local.Token}   OBS overlay: {local.ObsUrl}");

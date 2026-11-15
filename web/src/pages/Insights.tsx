@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useLive, type TimelinePoint } from '../api';
 import { useLocale } from '../i18n';
-import { Area, Bars, Legend, Seg, SplitBar } from '../parts';
+import { Area, Bars, Count, Legend, Seg, SplitBar } from '../parts';
 import { memberSegments } from './Home';
 import type { PageProps } from '../App';
 
 type Range = '30' | '90' | 'all';
 
 export function Insights({ state }: PageProps) {
-  const { t, n } = useLocale();
+  const { t, n, n1, lang } = useLocale();
   const [bucket, setBucket] = useState<'day' | 'week'>('day');
   const [range, setRange] = useState<Range>('90');
   const query = new URLSearchParams({ bucket });
@@ -25,7 +25,7 @@ export function Insights({ state }: PageProps) {
   const played = (days ?? []).filter((d) => d.matches > 0);
   const busiest = played.reduce<TimelinePoint | undefined>((best, d) => (!best || d.chests > best.chests ? d : best), undefined);
   const inRange = played.reduce((s, d) => s + d.chests, 0);
-  const fmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const fmt = new Intl.DateTimeFormat(lang === 'fr' ? 'fr-FR' : undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
   const me = squad?.members.find((m) => m.userId === sync.userId);
   const others = squad ? squad.members.filter((m) => m.userId !== sync.userId) : [];
@@ -34,7 +34,7 @@ export function Insights({ state }: PageProps) {
     const matches = list.reduce((s, m) => s + m.lifetimeMatches, 0);
     return matches ? list.reduce((s, m) => s + m.lifetimeChests, 0) / matches : undefined;
   };
-  const avg = (v: number | undefined) => (v === undefined ? '–' : v.toLocaleString(undefined, { maximumFractionDigits: 1 }));
+  const avg = (v: number | undefined) => (v === undefined ? '–' : n1(v));
   const myAverage = me ? perMatch([me]) : undefined;
   const squadAverage = perMatch(others);
   const lifetime = squad ? memberSegments(squad, sync.userId, (id) => squad.members.find((m) => m.userId === id)?.lifetimeChests, t('squad.you')) : [];
@@ -54,7 +54,7 @@ export function Insights({ state }: PageProps) {
         <div><div className="k">{t('insights.activeDays')}</div><div className="v">{n(played.length)}</div></div>
         <div><div className="k">{t('insights.perDay')}</div><div className="v">{played.length ? n(Math.round(inRange / played.length)) : '–'}</div></div>
         <div><div className="k">{t('insights.busiestDay')}</div><div className="v">{busiest ? n(busiest.chests) : '–'}</div><div className="x">{busiest ? fmt.format(new Date(busiest.date + 'T12:00:00')) : ''}</div></div>
-        <div><div className="k">{t('home.average')}</div><div className="v">{totals.matches ? totals.average.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '–'}</div></div>
+        <div><div className="k">{t('home.average')}</div><div className="v">{totals.matches ? <Count value={totals.average} /> : '–'}</div></div>
       </section>
 
       <section className="panel">
