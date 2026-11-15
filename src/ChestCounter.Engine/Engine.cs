@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ChestCounter.Shared;
 
@@ -87,6 +88,33 @@ public sealed class ChestEngine : IDisposable
 
     /// <summary>Something the interface shows has changed. The argument names what: "tracking", "matches", "sync", "settings".</summary>
     public event Action<string>? Changed;
+
+    public object ImportOriginal(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("Matches", out var rows) || rows.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Invalid Chest Counter data.json: Matches is missing.");
+        var matches = new List<(AnalyzedMatch Match, DateTime Analyzed)>();
+        var skipped = 0;
+        foreach (var row in rows.EnumerateArray())
+        {
+            var original = row.Deserialize<global::ChestCounter.MatchRecord>() ?? throw new InvalidDataException("Invalid match in data.json.");
+            // The original's fallback identifier is filename-based and cannot be deduplicated reliably.
+            if (string.IsNullOrWhiteSpace(original.SessionId) || original.SessionId.EndsWith("-" + original.ReplayFile, StringComparison.Ordinal))
+            { skipped++; continue; }
+            var match = FortniteReplayAnalyzer.Convert(original, original.ReplayFile, "");
+            if (match.ChestsOpened < 0 || match.AmmoBoxesOpened < 0 || match.OtherContainersOpened < 0)
+                throw new InvalidDataException("Invalid negative count in data.json.");
+            if (ModeRules.WhyNot(match) != null) { skipped++; continue; }
+            matches.Add((match, original.AnalyzedAtUtc == default ? _o.Clock.UtcNow : original.AnalyzedAtUtc));
+        }
+        var imported = Db.ImportOriginal(matches);
+        if (imported > 0)
+        {
+            if (Sync.Configured) Sync.ResyncAll();
+            Changed?.Invoke("matches");
+        }
+        return new { imported, duplicates = matches.Count - imported, skipped };
+    }
 
     public ChestEngine(EngineOptions options)
     {

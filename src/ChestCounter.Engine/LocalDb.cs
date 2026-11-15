@@ -309,6 +309,23 @@ public sealed class LocalDb : IDisposable
 
     public MatchRow? GetMatch(string matchId) => Query("SELECT * FROM matches WHERE match_id=$m", ReadMatch, ("$m", matchId)).FirstOrDefault();
 
+    public int ImportOriginal(IEnumerable<(AnalyzedMatch Match, DateTime Analyzed)> matches)
+    {
+        var imported = 0;
+        Transaction(() =>
+        {
+            foreach (var (match, analyzed) in matches)
+            {
+                if (GetMatch(match.MatchId) != null) continue;
+                var file = new FileRow("original:" + match.MatchId, "Imported from Chest Counter", 0, null,
+                    FileStatus.Counted, match.MatchId, null, match.ParserVersion, analyzed);
+                SaveAnalysis(match, null, file, true, 0, null, analyzed, null);
+                imported++;
+            }
+        });
+        return imported;
+    }
+
     public MatchDetail? GetMatchDetail(string matchId) =>
         Scalar("SELECT detail_json FROM matches WHERE match_id=$m", ("$m", matchId)) is string json ? Wire.Deserialize<MatchDetail>(json) : null;
 

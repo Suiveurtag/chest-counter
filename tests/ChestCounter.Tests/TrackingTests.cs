@@ -8,6 +8,24 @@ public sealed class TrackingTests : IDisposable
     private readonly Sandbox _s = new();
     public void Dispose() => _s.Dispose();
 
+    [Fact]
+    public void Original_import_deduplicates_and_skips_unreliable_or_unsupported_matches()
+    {
+        using var engine = _s.Engine();
+        using var json = System.Text.Json.JsonDocument.Parse("""
+            {"Matches":[
+              {"SessionId":"game-1","ReplayFile":"a.replay","EpicId":"abc","PlayerName":"Player","Playlist":"Playlist_DefaultSolo","ChestsOpened":12},
+              {"SessionId":"game-1","ReplayFile":"a.replay","EpicId":"abc","PlayerName":"Player","Playlist":"Playlist_DefaultSolo","ChestsOpened":12},
+              {"SessionId":"date-b.replay","ReplayFile":"b.replay","PlayerName":"Player","Playlist":"Playlist_DefaultSolo","ChestsOpened":9},
+              {"SessionId":"game-2","PlayerName":"Player","Playlist":"Creative","ChestsOpened":8}
+            ]}
+            """);
+        engine.ImportOriginal(json.RootElement);
+        engine.ImportOriginal(json.RootElement);
+        Assert.Equal(12, Sandbox.Total(engine.Db));
+        Assert.Single(engine.Db.Matches(new LocalDb.MatchFilter()));
+    }
+
     [Fact] // requirement 1
     public void Initial_import_processes_every_historical_replay()
     {

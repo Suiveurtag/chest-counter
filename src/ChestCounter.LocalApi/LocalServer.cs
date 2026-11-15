@@ -156,6 +156,7 @@ public sealed class LocalServer : IAsyncDisposable
     private void MapApi(WebApplication app)
     {
         var e = _engine;
+        var originalData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ChestCounter", "data.json");
         app.MapGet("/api/state", () => Json(e.GetState()));
         app.MapGet("/api/matches", (string? from, string? to, long? session, string? counted, int? limit, int? offset) =>
             Json(e.GetMatches(Date(from), Date(to), session, counted switch { "all" => null, "false" => false, _ => true }, limit ?? 200, offset ?? 0)));
@@ -163,6 +164,14 @@ public sealed class LocalServer : IAsyncDisposable
         app.MapGet("/api/sessions", () => Json(e.GetSessions()));
         app.MapGet("/api/timeline", (string? from, string? to, string? bucket) => Json(e.GetTimeline(Date(from), Date(to), bucket == "week" ? "week" : "day")));
         app.MapGet("/api/diagnostics", () => Json(e.GetDiagnostics()));
+        app.MapGet("/api/import-original/default", () => Json(new { found = File.Exists(originalData), path = originalData }));
+        app.MapPost("/api/import-original/default", () =>
+        {
+            using var stream = new FileStream(originalData, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var data = JsonDocument.Parse(stream);
+            return Json(e.ImportOriginal(data.RootElement));
+        });
+        app.MapPost("/api/import-original", (JsonElement data) => Json(e.ImportOriginal(data)));
 
         // The settings alone: what the desktop shell re-reads on every "settings" change (cheaper than /api/state).
         app.MapGet("/api/settings", () => Json(e.Settings));

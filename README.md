@@ -67,6 +67,12 @@ Microsoft Edge WebView2 runtime ships with Windows.
 On first launch the app finds Fortnite's replay folder
 (`%LOCALAPPDATA%\FortniteGame\Saved\Demos`), imports what is there, and keeps watching it.
 
+To bring over history from the original Chest Counter, open Settings → Import from the original Chest Counter.
+The app detects `%APPDATA%\ChestCounter\data.json` automatically, or you can choose another file.
+Already recorded matches are not duplicated. Imported matches with an
+Epic ID are also queued for squad sync. Matches without a reliable session ID, unsupported modes, and manual or
+estimated additions are excluded; the import reports how many matches were skipped.
+
 | Where | What |
 |---|---|
 | `%APPDATA%\ChestCounterSquad\history.db` | Your history and settings (one SQLite file) |
