@@ -14,7 +14,8 @@ use windows_sys::Win32::System::Threading::{
     EVENT_MODIFY_STATE, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, SYNCHRONIZATION_SYNCHRONIZE,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, MessageBoxW, ShowWindow, GWL_EXSTYLE, MB_ICONERROR, MB_OK, SW_SHOWNOACTIVATE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, MessageBoxW, ShowWindow, GWL_EXSTYLE, MB_ICONERROR, MB_OK, SW_HIDE, SW_SHOWNOACTIVATE, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW,
 };
 
 fn wide(s: &str) -> Vec<u16> {
@@ -139,4 +140,12 @@ pub fn make_no_activate(hwnd: HWND) {
 /// Shows a window without activating it (Tauri's show() would take the focus).
 pub fn show_no_activate(hwnd: HWND) {
     unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
+}
+
+/// Rebuilds the transparent window's compositor surface without taking focus.
+pub fn refresh_no_activate(hwnd: HWND) {
+    unsafe {
+        ShowWindow(hwnd, SW_HIDE);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
 }
