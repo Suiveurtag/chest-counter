@@ -657,6 +657,23 @@ body {
   animation: drain linear forwards;
 }
 
+/* ---- alignment ------------------------------------------------------------------------------------------------
+   The blocks (figures, squad, end-of-match card) line up on the widest one; the card's own content follows. */
+
+.align-center { align-items: center; }
+.align-right { align-items: flex-end; }
+.align-center .result { transform-origin: 50% 0; }
+.align-right .result { transform-origin: 100% 0; }
+/* The window is anchored on this side (the shell grows it away from the screen edge), so things enter from it. */
+.align-right.theme-rift .result { animation-name: rift-wipe-r; }
+.align-right.theme-rift .result.leaving { animation-name: rift-wipe-out-r; }
+.align-right.theme-rift .cell,
+.align-right.theme-rift .crew { animation-name: rift-tile-r; }
+.align-right.theme-rift .loot { transform: translateX(calc(26px * var(--k))) skewX(-10deg) scale(1.04); }
+.align-right.theme-rift .loot.in { transform: none; }
+.align-right .loot { transform: translateX(calc(14px * var(--k))) scale(0.94); }
+.align-right .loot.in { transform: none; }
+
 /* ---- layouts (Aurora) ----------------------------------------------------------------------------------------- */
 
 .no-icons .cell-head .ico { display: none; }
@@ -1126,6 +1143,17 @@ body {
 @keyframes rift-wipe {
   from { clip-path: inset(0 100% 0 0 round calc(7px * var(--k))); transform: translateX(calc(-16px * var(--k))) skewX(-6deg); }
   to { clip-path: inset(0 0 0 0 round calc(7px * var(--k))); }
+}
+@keyframes rift-tile-r {
+  from { opacity: 0; transform: translateX(calc(18px * var(--k))) skewX(-12deg) scale(0.92); }
+  60% { opacity: 1; }
+}
+@keyframes rift-wipe-r {
+  from { clip-path: inset(0 0 0 100% round calc(7px * var(--k))); transform: translateX(calc(16px * var(--k))) skewX(-6deg); }
+  to { clip-path: inset(0 0 0 0 round calc(7px * var(--k))); }
+}
+@keyframes rift-wipe-out-r {
+  to { clip-path: inset(0 100% 0 0 round calc(7px * var(--k))); transform: translateX(calc(-16px * var(--k))) skewX(-6deg); opacity: 0.6; }
 }
 @keyframes rift-wipe-out {
   to { clip-path: inset(0 0 0 100% round calc(7px * var(--k))); transform: translateX(calc(16px * var(--k))) skewX(-6deg); opacity: 0.6; }

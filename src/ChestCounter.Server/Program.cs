@@ -282,7 +282,8 @@ api.MapPut("/contributions", async (UploadRequest body, HttpContext c) =>
         var valid = item is { MatchId.Length: >= 1 and <= 128, PlayerId.Length: >= 1 and <= 64 }
                     && item.ChestsOpened is >= 0 and <= 5000 && item.ChestsDestroyed >= 0 && item.ChestsDestroyed <= item.ChestsOpened
                     && item.AmmoBoxesOpened is >= 0 and <= 5000 && item.OtherContainersOpened is >= 0 and <= 5000
-                    && item.ParserVersion >= 0 && (item.Roster?.Count ?? 0) <= 32;
+                    && item.ParserVersion >= 0 && (item.Roster?.Count ?? 0) <= 32
+                    && (item.Treasures?.Count ?? 0) <= 64 && (item.Treasures?.All(t => t != null && t.RawItem != null) ?? true);
         if (!valid)
         {
             results.Add(new UploadResult(item?.MatchId ?? "", item?.PlayerId ?? "", UploadStatus.Invalid));
@@ -297,6 +298,8 @@ api.MapPut("/contributions", async (UploadRequest body, HttpContext c) =>
             Playlist = CleanName(item.Playlist, 96),
             MatchStartUtc = item.MatchStartUtc?.ToUniversalTime(),
             Roster = (item.Roster ?? new()).Select(r => new RosterEntry(CleanName(r.PlayerId, 64)?.ToLowerInvariant(), CleanName(r.Name, 64) ?? "", r.IsBot, Math.Clamp(r.ObservedChests, 0, 5000))).ToList(),
+            Treasures = item.Treasures?.Select(t => new TreasureDto(CleanName(t.PrizeId, 128), CleanName(t.RawItem, 200) ?? "",
+                t.TimeSeconds is { } s && float.IsFinite(s) ? Math.Clamp(s, 0, 7200) : null, t.FromGoldenChest)).ToList(),
         };
         var status = store.Upsert(user.Id, clean, Now());
         accepted |= status == UploadStatus.Accepted;

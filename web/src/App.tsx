@@ -92,7 +92,7 @@ export function App() {
             <nav className="nav" ref={navRef}>
               {pill && <motion.span className="nav-pill" initial={false} animate={{ y: pill.y, height: pill.h }} transition={{ type: 'spring', stiffness: 380, damping: 32 }} />}
               {pages.map(([id, key, Icon], i) => (
-                <motion.button key={id} aria-current={page === id ? 'page' : undefined} onClick={() => go(id)}
+                <motion.button key={id} data-ico={id} aria-current={page === id ? 'page' : undefined} onClick={() => go(id)}
                   initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.15 + i * 0.05, duration: 0.5, ease: easeOut }}>
                   <Icon size={18} className="nav-icon" /><span>{locale.t(key)}</span>
                   {id === 'squad' && squadActivity && <i className="dot" title={locale.t('squad.online')} />}

@@ -22,7 +22,7 @@ export function OverlaySection({ state, patch }: { state: AppState; patch: Patch
     [list[i], list[j]] = [list[j], list[i]];
     overlay({ items: list });
   };
-  const needsSquad = (key: OverlayItem) => (key === 'squad' || key === 'squadShared') && !state.squad;
+  const needsSquad = (key: OverlayItem) => (key === 'squad' || key === 'squadShared' || key === 'squadSession') && !state.squad;
 
   // The preview is the overlay page itself, in a frame: it tells its size, and plays a demo on request.
   const frame = useRef<HTMLIFrameElement>(null);
@@ -60,6 +60,10 @@ export function OverlaySection({ state, patch }: { state: AppState; patch: Patch
       <div className="actions"><span className="soft" style={{ width: 110 }}>{t('settings.layout')}</span>
         <Seg value={o.layout ?? 'row'} onChange={(v) => overlay({ layout: v })}
           options={[['row', t('settings.layout.row')], ['column', t('settings.layout.column')], ['compact', t('settings.layout.compact')]]} />
+      </div>
+      <div className="actions"><span className="soft" style={{ width: 110 }}>{t('settings.align')}</span>
+        <Seg value={o.align ?? 'left'} onChange={(v) => overlay({ align: v })}
+          options={[['left', t('settings.align.left')], ['center', t('settings.align.center')], ['right', t('settings.align.right')]]} />
       </div>
 
       <div className="ov-preview">

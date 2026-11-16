@@ -60,6 +60,8 @@ public sealed record OverlaySettings
     public string Theme { get; init; } = "aurora";
     /// <summary>"row" (side by side), "column" (one under the other) or "compact" (one small line).</summary>
     public string Layout { get; init; } = "row";
+    /// <summary>How the overlay's blocks (figures, squad, end-of-match card) line up: "left", "center" or "right".</summary>
+    public string Align { get; init; } = "left";
     /// <summary>The figures shown, in order (see <see cref="ItemKeys"/>). Null: derived from the older Show* switches.</summary>
     public List<string>? Items { get; init; }
     public bool ShowIcons { get; init; } = true;
@@ -69,7 +71,7 @@ public sealed record OverlaySettings
     public bool ShowResult { get; init; } = true;
     public int ResultSeconds { get; init; } = 14;
 
-    public static readonly string[] ItemKeys = { "personal", "squad", "squadShared", "session", "last", "treasures", "teamTreasures" };
+    public static readonly string[] ItemKeys = { "personal", "squad", "squadShared", "session", "squadSession", "last", "treasures", "teamTreasures" };
 
     /// <summary>Valid values everywhere, and the item list spelled out.</summary>
     public OverlaySettings Normalized()
@@ -91,6 +93,7 @@ public sealed record OverlaySettings
             SquadScope = SquadScope == "shared" ? "shared" : "combined",
             Theme = Theme == "rift" ? "rift" : "aurora",
             Layout = Layout is "column" or "compact" ? Layout : "row",
+            Align = Align is "center" or "right" ? Align : "left",
             Items = items,
             ResultSeconds = Math.Clamp(ResultSeconds, 5, 60),
         };
@@ -99,7 +102,10 @@ public sealed record OverlaySettings
 
 public sealed record AppState(string Version, int ParserVersion, string DataDir, AppSettings Settings, TrackingStatus Tracking, ImportStatus Import,
     RecordingHint Recording, ProfileRow? Profile, List<ProfileRow> Profiles, Totals Totals, List<MatchSummary> Recent, SyncStatus Sync,
-    SquadStateDto? Squad);
+    SquadStateDto? Squad, List<SquadFindView>? SquadFinds = null);
+
+/// <summary>A treasure a squad member found, named for the interface.</summary>
+public sealed record SquadFindView(string UserId, string MatchId, DateTime? MatchStartUtc, TreasureTag Tag, bool Shared);
 
 public sealed record TimelinePoint(string Date, int Chests, int Matches, int AmmoBoxes);
 
@@ -113,7 +119,7 @@ public sealed record OverlayData(int Personal, int? Squad, string SquadScope, in
     List<OverlayMember> Members, string? PlayerName, string? SquadName, OverlaySettings Settings,
     bool Live = false, bool Reading = false, string? LastMatchId = null, int? LastChests = null, int? LastPlacement = null,
     int? LastTotalPlayers = null, int? LastEliminations = null, List<TreasureTag>? LastTreasures = null,
-    int Treasures = 0, int TeamTreasures = 0, int? SquadCombined = null, int? SquadShared = null);
+    int Treasures = 0, int TeamTreasures = 0, int? SquadCombined = null, int? SquadShared = null, int? SquadSession = null);
 
 public sealed record Diagnostics(Dictionary<string, int> FileCounts, List<FileRow> Problems, List<MatchSummary> NotCounted, List<LogRow> Log,
     List<OutboxRow> RefusedUploads, string DatabasePath, long DatabaseBytes);
@@ -436,8 +442,13 @@ public sealed class ChestEngine : IDisposable
             new ImportStatus(tracking.ReplayFiles, counts.GetValueOrDefault(FileStatus.Counted), counts.GetValueOrDefault(FileStatus.Duplicate),
                 counts.GetValueOrDefault(FileStatus.NotCounted), counts.GetValueOrDefault(FileStatus.Incomplete), counts.GetValueOrDefault(FileStatus.Error),
                 tracking.Pending.Count),
-            GetRecordingHint(), profile, profiles, GetTotals(profile?.Key), recent, Sync.Status, Sync.Squad);
+            GetRecordingHint(), profile, profiles, GetTotals(profile?.Key), recent, Sync.Status, Sync.Squad, SquadFinds(Sync.Squad));
     }
+
+    /// <summary>The squad's recent treasures, named with this PC's catalogue (the server only keeps raw ids).</summary>
+    private List<SquadFindView>? SquadFinds(SquadStateDto? squad) => squad?.RecentTreasures
+        .Select(t => new SquadFindView(t.UserId, t.MatchId, t.MatchStartUtc, Treasures.Describe(t.PrizeId, t.RawItem, t.FromGoldenChest, false, Hunt.Catalog), t.Shared))
+        .ToList();
 
     public List<MatchSummary> GetMatches(DateTime? fromUtc, DateTime? toUtc, long? sessionId, bool? counted, int limit, int offset) =>
         Db.Matches(new LocalDb.MatchFilter(counted == false ? null : CurrentProfile()?.Key, fromUtc, toUtc, sessionId, counted, Math.Clamp(limit, 1, 1000), Math.Max(0, offset)))
@@ -508,8 +519,17 @@ public sealed class ChestEngine : IDisposable
             live, reading, last?.MatchId, last?.Chests, last?.Placement, last?.TotalPlayers, last?.Eliminations,
             last == null ? new() : Treasures.Tags(Db.GetMatchDetail(last.MatchId), Hunt.Catalog),
             totals.Treasures, profile == null ? 0 : Db.TeamTreasureCount(profile.Key),
-            squad?.CombinedMemberChests, squad?.SharedChests);
+            squad?.CombinedMemberChests, squad?.SharedChests, SquadSessionChests(squad));
     }
+
+    /// <summary>
+    /// The squad session's chests while it is still going (judged on this PC's clock, as the cached state can be
+    /// hours old), 0 between sessions, null without a squad.
+    /// </summary>
+    private int? SquadSessionChests(SquadStateDto? squad) =>
+        squad == null ? null
+        : squad.Session is { } s && _o.Clock.UtcNow - s.EndUtc <= SquadAggregator.SessionGap ? s.Chests
+        : 0;
 
     public Diagnostics GetDiagnostics()
     {

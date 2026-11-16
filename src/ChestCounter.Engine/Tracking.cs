@@ -308,6 +308,7 @@ public sealed class ReplayTracker
                     PossiblyIncomplete = match.PossiblyIncomplete,
                     IdentityReliable = match.IdentityReliable,
                     Roster = match.Roster,
+                    Treasures = LocalDb.TreasuresForUpload(match.Treasures),
                 };
             }
 

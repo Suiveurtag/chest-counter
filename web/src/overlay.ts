@@ -21,10 +21,10 @@ import '@fontsource/barlow-condensed/700-italic.css';
 import '@fontsource/barlow-condensed/800-italic.css';
 import './overlay.css';
 
-type ItemKey = 'personal' | 'squad' | 'squadShared' | 'session' | 'last' | 'treasures' | 'teamTreasures';
+type ItemKey = 'personal' | 'squad' | 'squadShared' | 'session' | 'squadSession' | 'last' | 'treasures' | 'teamTreasures';
 interface OverlaySettings {
   enabled: boolean; locked: boolean; opacity: number; scale: number; showMembers: boolean;
-  theme?: 'aurora' | 'rift'; layout?: 'row' | 'column' | 'compact'; items?: ItemKey[]; showIcons?: boolean;
+  theme?: 'aurora' | 'rift'; layout?: 'row' | 'column' | 'compact'; align?: 'left' | 'center' | 'right'; items?: ItemKey[]; showIcons?: boolean;
   showStatus?: boolean; showResult?: boolean; resultSeconds?: number;
 }
 interface OverlayMember { name: string; chests: number; online: boolean }
@@ -35,6 +35,8 @@ interface OverlayData {
   live?: boolean; reading?: boolean; lastMatchId?: string | null; lastChests?: number | null; lastPlacement?: number | null;
   lastTotalPlayers?: number | null; lastEliminations?: number | null; lastTreasures?: TreasureTag[] | null;
   treasures?: number; teamTreasures?: number; squadCombined?: number | null; squadShared?: number | null;
+  /** Null without a squad, 0 between sessions. */
+  squadSession?: number | null;
 }
 
 /** Inside the Settings page: a live sample, driven by messages from the page, never by the mouse. */
@@ -45,7 +47,7 @@ const preview = new URLSearchParams(location.search).has('preview');
 const WORDS = {
   en: {
     chests: 'Chests', squad: 'Squad', together: 'Squad together', session: 'Session', last: 'Last match',
-    treasures: 'Treasures', teamTreasures: 'Squad treasures',
+    treasures: 'Treasures', teamTreasures: 'Squad treasures', squadSession: 'Squad session',
     live: 'Match in progress', reading: 'Reading the replay', over: 'Match over', victory: 'Victory Royale',
     chestsWord: 'chests', chestWord: 'chest', elims: '{n} elim.', elim: '1 elim.', total: 'total {n}',
     loot: 'Treasures', noLoot: 'No treasure this time', team: 'team',
@@ -57,7 +59,7 @@ const WORDS = {
   },
   fr: {
     chests: 'Coffres', squad: 'Escouade', together: 'Escouade ensemble', session: 'Session', last: 'Dernière partie',
-    treasures: 'Trésors', teamTreasures: 'Trésors escouade',
+    treasures: 'Trésors', teamTreasures: 'Trésors escouade', squadSession: 'Session escouade',
     live: 'Partie en cours', reading: 'Lecture du replay', over: 'Partie terminée', victory: 'Victoire royale',
     chestsWord: 'coffres', chestWord: 'coffre', elims: '{n} élim.', elim: '1 élim.', total: 'total {n}',
     loot: 'Trésors', noLoot: 'Pas de trésor cette fois', team: 'équipe',
@@ -321,6 +323,8 @@ const ITEMS: Record<ItemKey, { color: string; icon: string; label: () => string;
   squad: { color: 'cyan', icon: ICON.squad, label: () => T('squad'), value: (d) => d.squadCombined ?? (d.squadScope === 'shared' ? undefined : d.squad) },
   squadShared: { color: 'teal', icon: ICON.squad, label: () => T('together'), value: (d) => d.squadShared ?? (d.squadScope === 'shared' ? d.squad : undefined) },
   session: { color: 'pink', icon: ICON.session, label: () => T('session'), value: (d) => d.session },
+  // Session colour, squad icon: the members' session together (an older engine sends nothing: left out).
+  squadSession: { color: 'pink', icon: ICON.squad, label: () => T('squadSession'), value: (d) => (d.squadSession == null ? undefined : d.squadSession) },
   // "+" = some teammates have not uploaded this match yet: the figure can still grow.
   last: { color: 'text', icon: ICON.last, label: () => T('last'), value: (d) => d.lastMatch ?? null, suffix: (d) => (d.lastMatchPartial ? '+' : '') },
   treasures: { color: 'violet', icon: ICON.gem, label: () => T('treasures'), value: (d) => d.treasures ?? 0 },
@@ -378,6 +382,9 @@ function applyLook(s: OverlaySettings) {
   const layout = s.layout === 'column' || s.layout === 'compact' ? s.layout : 'row';
   root.classList.remove('layout-row', 'layout-column', 'layout-compact');
   root.classList.add(`layout-${layout}`);
+  const align = s.align === 'center' || s.align === 'right' ? s.align : 'left';
+  root.classList.remove('align-left', 'align-center', 'align-right');
+  root.classList.add(`align-${align}`);
   root.classList.toggle('no-icons', s.showIcons === false);
 }
 
@@ -665,7 +672,7 @@ function demoResult(victory: boolean) {
   // The figures roll up to their real values, as they would after a match.
   for (const [key, c] of cells) {
     const v = c.odo.value;
-    if (v == null || (key !== 'personal' && key !== 'session')) continue;
+    if (v == null || (key !== 'personal' && key !== 'session' && key !== 'squadSession')) continue;
     c.odo.set(Math.max(0, v - chests), '', false);
     c.odo.set(v, '', true);
     bump(c.el, Math.min(chests, v));

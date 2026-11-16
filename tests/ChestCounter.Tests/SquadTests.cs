@@ -55,8 +55,9 @@ public sealed class Device
 
     /// <summary>This player's own result for a match, with the teammates their replay lists.</summary>
     public ContributionDto Result(string matchId, int chests, IEnumerable<Device>? mates = null, int parser = 1, int observedOfEachMate = 0,
-        DateTime? start = null, string playlist = "Playlist_DefaultSquad") => new()
+        DateTime? start = null, string playlist = "Playlist_DefaultSquad", int? treasures = 0) => new()
     {
+        Treasures = treasures is int t ? Enumerable.Range(0, t).Select(i => new TreasureDto($"prize-{matchId}-{i}", "Item_" + i, 60f * (i + 1), i == 0)).ToList() : null,
         MatchId = matchId,
         PlayerId = PlayerId,
         PlayerName = Name,
@@ -342,6 +343,95 @@ public sealed class SquadTests : IDisposable
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "s3cret-admin");
         var stats = await http.GetStringAsync("api/v1/admin/stats");
         Assert.Contains("\"users\":1", stats);
+    }
+
+    [Fact]
+    public async Task Treasures_are_summed_per_player_and_shared_only_for_matches_played_together()
+    {
+        var (p, squad) = await Squad(2);
+        await p[0].Upload(p[0].Result("together", 10, p, treasures: 2), p[0].Result("solo-a", 5, treasures: 1));
+        await p[1].Upload(p[1].Result("together", 12, p, treasures: 3));
+        // Sent twice: still one row per (match, player).
+        await p[1].Upload(p[1].Result("together", 12, p, treasures: 3));
+
+        var state = await p[0].State(squad);
+
+        Assert.Equal(6, state.CombinedTreasures);
+        Assert.Equal(5, state.SharedTreasures);
+        Assert.Equal(new[] { 3, 3 }, state.Members.Select(m => m.LifetimeTreasures).ToArray());
+        Assert.Equal(new[] { 2, 3 }, state.Members.Select(m => m.SharedTreasures).ToArray());
+        Assert.Equal(6, state.RecentTreasures.Count);
+        Assert.Equal(5, state.RecentTreasures.Count(t => t.Shared));
+        Assert.Equal(new int?[] { 2, 3 }, Assert.Single(state.SharedMatches).Contributions.Select(c => c.Treasures).ToArray());
+    }
+
+    [Fact]
+    public async Task Treasures_of_ambiguous_matches_stay_out_of_the_shared_total()
+    {
+        var (p, squad) = await Squad(2);
+        var start = new DateTime(2026, 11, 1, 20, 0, 0, DateTimeKind.Utc);
+        await p[0].Upload(p[0].Result("m", 30, p, start: start, treasures: 2));
+        await p[1].Upload(p[1].Result("m", 25, p, start: start.AddHours(3), treasures: 1));
+
+        var state = await p[0].State(squad);
+
+        Assert.Equal(0, state.SharedTreasures);
+        Assert.Equal(3, state.CombinedTreasures);
+        Assert.All(state.RecentTreasures, t => Assert.False(t.Shared));
+    }
+
+    [Fact]
+    public async Task Uploads_from_older_clients_without_treasures_are_unknown_not_zero()
+    {
+        var (p, squad) = await Squad(2);
+        await p[0].Upload(p[0].Result("a", 10, p, treasures: null), p[0].Result("b", 4, treasures: 1));
+        await p[1].Upload(p[1].Result("a", 12, p, treasures: null));
+
+        var state = await p[0].State(squad);
+
+        Assert.Equal(1, state.CombinedTreasures);
+        Assert.Equal(new[] { 1, 1 }, state.Members.Select(m => m.TreasuresUnknownMatches).ToArray());
+        Assert.All(Assert.Single(state.SharedMatches).Contributions, c => Assert.Null(c.Treasures));
+        Assert.Equal(26, state.CombinedMemberChests); // chests unaffected
+    }
+
+    [Fact]
+    public void Session_is_the_latest_run_of_matches_without_a_long_break()
+    {
+        var members = new[] { "u1", "u2" }
+            .Select((u, i) => new MemberInfo(u, "P" + i, i == 0 ? "owner" : "member", DateTime.UnixEpoch, null, null, new[] { new AccountDto("p" + i, "P" + i) }))
+            .ToList();
+        var evening = new DateTime(2026, 11, 2, 20, 0, 0, DateTimeKind.Utc);
+        ContributionRecord Rec(string user, string player, string match, DateTime start, int chests, int treasures, string? mate = null) =>
+            new(user, new ContributionDto
+            {
+                MatchId = match, PlayerId = player, PlayerName = player, ChestsOpened = chests, MatchStartUtc = start, DurationSeconds = 1500,
+                Roster = mate == null ? new() : new() { new RosterEntry(mate, mate, false, 0) },
+                Treasures = Enumerable.Range(0, treasures).Select(i => new TreasureDto(null, "x" + i, null, false)).ToList(),
+            }, start.AddMinutes(30));
+        var records = new List<ContributionRecord>
+        {
+            Rec("u1", "p0", "yesterday", evening.AddDays(-1), 99, 4),          // a day before: another session
+            Rec("u1", "p0", "m1", evening, 10, 1, mate: "p1"),
+            Rec("u2", "p1", "m1", evening, 12, 0, mate: "p0"),
+            Rec("u2", "p1", "solo", evening.AddMinutes(30), 7, 1),            // solo game in the same evening counts
+            Rec("u1", "p0", "m2", evening.AddHours(2.5), 5, 0),               // 2 h after the solo game ended: same run
+        };
+        var squad = new SquadInfo("s", "S", 1, 4);
+
+        var live = SquadAggregator.Build(squad, members, records, _ => false, evening.AddHours(3)).Session!;
+        Assert.True(live.Active);
+        Assert.Equal(evening, live.StartUtc);
+        Assert.Equal(3, live.Matches); // m1 is one match, played by two members
+        Assert.Equal(34, live.Chests);
+        Assert.Equal(2, live.Treasures);
+        Assert.Equal(1, live.SharedMatches);
+        Assert.Equal(22, live.SharedChests);
+        Assert.Equal(new[] { ("u1", 15, 2), ("u2", 19, 2) }, live.Members.Select(m => (m.UserId, m.Chests, m.Matches)).ToArray());
+
+        var nextDay = SquadAggregator.Build(squad, members, records, _ => false, evening.AddDays(1)).Session!;
+        Assert.False(nextDay.Active); // still the latest session, shown as over
+        Assert.Equal(34, nextDay.Chests);
     }
 
     [Fact] // the aggregation itself, without a server: deterministic and order independent

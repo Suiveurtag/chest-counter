@@ -24,6 +24,12 @@ public static class Wire
 public sealed record RosterEntry(string? PlayerId, string Name, bool IsBot, int ObservedChests);
 
 /// <summary>
+/// A treasure the uploader's own replay shows they obtained. Raw ids only: the clients name them with their own
+/// catalogue. Treasures deduced for teammates are estimates and are never sent.
+/// </summary>
+public sealed record TreasureDto(string? PrizeId, string RawItem, float? TimeSeconds, bool FromGoldenChest);
+
+/// <summary>
 /// One player's own result for one match, derived from that player's own replay. The authoritative unit of the
 /// squad synchronization: the server keeps exactly one per (MatchId, PlayerId).
 /// </summary>
@@ -49,6 +55,11 @@ public sealed record ContributionDto
     /// <summary>False when the replay held no game session id: the match id is local and can never be matched across devices.</summary>
     public bool IdentityReliable { get; init; } = true;
     public List<RosterEntry> Roster { get; init; } = new();
+    /// <summary>
+    /// The uploader's own treasures in this match. Null: a client from before treasures were synced (unknown, not
+    /// zero). Added in protocol 1 as an optional field: older servers ignore it, older clients omit it.
+    /// </summary>
+    public List<TreasureDto>? Treasures { get; init; }
 }
 
 public sealed record RegisterRequest(string DisplayName, string? RegistrationKey = null);
@@ -108,10 +119,45 @@ public sealed record MemberDto
     /// <summary>This member's confirmed chests in shared squad matches only.</summary>
     public int SharedChests { get; init; }
     public MatchRefDto? LastMatch { get; init; }
+    /// <summary>Treasures of this member's own replays (matches whose upload carries treasures).</summary>
+    public int LifetimeTreasures { get; init; }
+    /// <summary>This member's treasures in shared squad matches only.</summary>
+    public int SharedTreasures { get; init; }
+    /// <summary>Counted matches uploaded by a client that did not send treasures: the treasure totals are a lower bound.</summary>
+    public int TreasuresUnknownMatches { get; init; }
+    /// <summary>This member's best match (most chests).</summary>
+    public MatchRefDto? BestMatch { get; init; }
 }
 
 public sealed record SharedContributionDto(string UserId, string PlayerId, string PlayerName, int Chests, int ChestsDestroyed,
-    int AmmoBoxes, int ParserVersion, DateTime ReceivedUtc, bool PossiblyIncomplete);
+    int AmmoBoxes, int ParserVersion, DateTime ReceivedUtc, bool PossiblyIncomplete, int? Treasures = null);
+
+/// <summary>One treasure a member found, for the squad's recent finds.</summary>
+/// <param name="Shared">Found in a match played with the squad (not ambiguous).</param>
+public sealed record SquadTreasureDto(string UserId, string MatchId, DateTime? MatchStartUtc, string? PrizeId, string RawItem,
+    bool FromGoldenChest, bool Shared);
+
+public sealed record SessionMemberDto(string UserId, int Chests, int Matches, int Treasures);
+
+/// <summary>
+/// The squad's latest play session: the members' matches in a row with no break longer than
+/// <see cref="SquadAggregator.SessionGap"/>. Sums of each member's own results, like every other figure.
+/// </summary>
+public sealed record SquadSessionDto
+{
+    public DateTime StartUtc { get; init; }
+    /// <summary>End of the session's last match.</summary>
+    public DateTime EndUtc { get; init; }
+    /// <summary>The last match ended less than <see cref="SquadAggregator.SessionGap"/> ago: the session may go on.</summary>
+    public bool Active { get; init; }
+    public int Chests { get; init; }
+    public int Matches { get; init; }
+    public int Treasures { get; init; }
+    /// <summary>Shared squad matches of the session (ambiguous ones excluded) and their confirmed chests.</summary>
+    public int SharedMatches { get; init; }
+    public int SharedChests { get; init; }
+    public List<SessionMemberDto> Members { get; init; } = new();
+}
 
 /// <summary>A member who played the match but whose own result is not on the server (yet).</summary>
 /// <param name="ObservedEstimate">What teammates' replays happened to record of them: shown as a hint, never summed.</param>
@@ -146,6 +192,14 @@ public sealed record SquadStateDto
     public int SharedMatchCount { get; init; }
     public int PartialMatchCount { get; init; }
     public int AmbiguousMatchCount { get; init; }
+    /// <summary>Sum of the members' own treasures, whoever they played with.</summary>
+    public int CombinedTreasures { get; init; }
+    /// <summary>Own treasures of the members in shared matches (ambiguous matches excluded).</summary>
+    public int SharedTreasures { get; init; }
+    /// <summary>Null when no member has a counted match with a start time.</summary>
+    public SquadSessionDto? Session { get; init; }
+    /// <summary>Most recent first, capped by the server.</summary>
+    public List<SquadTreasureDto> RecentTreasures { get; init; } = new();
     /// <summary>Most recent first, capped by the server.</summary>
     public List<SharedMatchDto> SharedMatches { get; init; } = new();
     public List<InviteDto> Invites { get; init; } = new();

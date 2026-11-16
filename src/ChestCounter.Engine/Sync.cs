@@ -67,7 +67,10 @@ public sealed record SyncStatus
 public sealed class SyncService : IDisposable
 {
     private const string KServer = "sync.server", KToken = "sync.token", KUser = "sync.userId", KName = "sync.name",
-        KSquad = "sync.squadId", KState = "sync.squadState", KLastSync = "sync.lastSyncUtc";
+        KSquad = "sync.squadId", KState = "sync.squadState", KLastSync = "sync.lastSyncUtc", KPayload = "sync.payload";
+
+    /// <summary>What uploads carry. Bump when a field is added, so the history is sent once more with it. 2: treasures.</summary>
+    private const string CurrentPayload = "2";
 
     private readonly LocalDb _db;
     private readonly ISyncTransport _transport;
@@ -289,6 +292,12 @@ public sealed class SyncService : IDisposable
         {
             _db.SetSetting(KSquad, me.Squads[0].SquadId); // joined from another install of the same identity
         }
+        if (_db.GetSetting(KPayload) != CurrentPayload)
+        {
+            // Results uploaded by an older version lack fields the squad now shows (treasures): send them again once.
+            _db.EnqueueAll(_clock.UtcNow);
+            _db.SetSetting(KPayload, CurrentPayload);
+        }
         await FlushOutboxAsync(ct);
         await RefreshSquadAsync(ct);
     }
@@ -412,6 +421,7 @@ public sealed class SyncService : IDisposable
         _db.SetSetting(KUser, registered.UserId);
         _db.SetSetting(KName, displayName);
         _db.EnqueueAll(_clock.UtcNow); // the whole local history, once
+        _db.SetSetting(KPayload, CurrentPayload);
         Wake();
         Changed?.Invoke();
     }
@@ -419,7 +429,7 @@ public sealed class SyncService : IDisposable
     /// <summary>Forgets the server on this PC. Local history is untouched; what was uploaded stays on the server.</summary>
     public void DisconnectServer()
     {
-        foreach (var key in new[] { KServer, KToken, KUser, KSquad, KState, KLastSync })
+        foreach (var key in new[] { KServer, KToken, KUser, KSquad, KState, KLastSync, KPayload })
         {
             _db.SetSetting(key, null);
         }

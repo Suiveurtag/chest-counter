@@ -20,12 +20,15 @@ public static class SquadAggregator
     /// <summary>Starts replicated by the same game server should be equal; this much slack covers rounding.</summary>
     public static readonly TimeSpan StartTolerance = TimeSpan.FromMinutes(5);
 
+    /// <summary>A break longer than this between two matches of the members ends a squad session.</summary>
+    public static readonly TimeSpan SessionGap = TimeSpan.FromHours(2);
+
     public const string WarnStartTime = "start_time_mismatch";
     public const string WarnPlaylist = "playlist_mismatch";
     public const string WarnRoster = "roster_mismatch";
 
     public static SquadStateDto Build(SquadInfo squad, IReadOnlyList<MemberInfo> members, IReadOnlyList<ContributionRecord> contributions,
-        Func<string, bool> isOnline, DateTime nowUtc, IReadOnlyList<InviteDto>? invites = null, int maxSharedMatches = 100)
+        Func<string, bool> isOnline, DateTime nowUtc, IReadOnlyList<InviteDto>? invites = null, int maxSharedMatches = 100, int maxRecentTreasures = 30)
     {
         var memberIds = members.Select(m => m.UserId).ToHashSet();
         // One row per (match, player) is guaranteed by the store; defend against a caller passing duplicates anyway.
@@ -65,6 +68,9 @@ public static class SquadAggregator
 
         var inTotals = shared.Where(s => s.Status != SharedMatchStatus.Ambiguous).ToList();
         var sharedByUser = inTotals.SelectMany(s => s.Contributions).GroupBy(c => c.UserId).ToDictionary(g => g.Key, g => g.Sum(c => c.Chests));
+        var sharedTreasuresByUser = inTotals.SelectMany(s => s.Contributions).GroupBy(c => c.UserId).ToDictionary(g => g.Key, g => g.Sum(c => c.Treasures ?? 0));
+        // (match, member) pairs that are part of a shared match in the totals.
+        var sharedPairs = inTotals.SelectMany(s => s.Contributions.Select(c => (s.MatchId, c.UserId))).ToHashSet();
 
         var memberDtos = members.Select(m =>
         {
@@ -90,8 +96,24 @@ public static class SquadAggregator
                 LifetimeMatches = own.Count,
                 SharedChests = sharedByUser.GetValueOrDefault(m.UserId),
                 LastMatch = last == null ? null : new MatchRefDto(last.Data.MatchId, last.Data.MatchStartUtc, last.Data.ChestsOpened),
+                LifetimeTreasures = own.Sum(c => c.Data.Treasures?.Count ?? 0),
+                SharedTreasures = sharedTreasuresByUser.GetValueOrDefault(m.UserId),
+                TreasuresUnknownMatches = own.Count(c => c.Data.Treasures == null),
+                BestMatch = own.OrderByDescending(c => c.Data.ChestsOpened).ThenByDescending(c => c.Data.MatchStartUtc ?? DateTime.MinValue)
+                    .Select(c => new MatchRefDto(c.Data.MatchId, c.Data.MatchStartUtc, c.Data.ChestsOpened)).FirstOrDefault(),
             };
         }).ToList();
+
+        var recentTreasures = counted
+            .Where(c => c.Data.Treasures is { Count: > 0 })
+            .SelectMany(c => c.Data.Treasures!.Select(t => (c, t)))
+            .OrderByDescending(x => x.c.Data.MatchStartUtc ?? x.c.ReceivedUtc)
+            .ThenByDescending(x => x.t.TimeSeconds ?? 0)
+            .ThenBy(x => x.c.UserId, StringComparer.Ordinal)
+            .Take(maxRecentTreasures)
+            .Select(x => new SquadTreasureDto(x.c.UserId, x.c.Data.MatchId, x.c.Data.MatchStartUtc, x.t.PrizeId, x.t.RawItem, x.t.FromGoldenChest,
+                sharedPairs.Contains((x.c.Data.MatchId, x.c.UserId))))
+            .ToList();
 
         return new SquadStateDto
         {
@@ -106,8 +128,62 @@ public static class SquadAggregator
             SharedMatchCount = inTotals.Count,
             PartialMatchCount = shared.Count(s => s.Status == SharedMatchStatus.Partial),
             AmbiguousMatchCount = shared.Count(s => s.Status == SharedMatchStatus.Ambiguous),
+            CombinedTreasures = memberDtos.Sum(m => m.LifetimeTreasures),
+            SharedTreasures = sharedTreasuresByUser.Values.Sum(),
+            Session = LatestSession(counted, inTotals, members, nowUtc),
+            RecentTreasures = recentTreasures,
             SharedMatches = shared.Take(maxSharedMatches).ToList(),
             Invites = invites?.ToList() ?? new List<InviteDto>(),
+        };
+    }
+
+    /// <summary>
+    /// The members' latest run of matches with no break longer than <see cref="SessionGap"/> between the end of one
+    /// and the start of the next. Matches without a start time cannot be placed and are left out.
+    /// </summary>
+    private static SquadSessionDto? LatestSession(List<ContributionRecord> counted, List<SharedMatchDto> inTotals, IReadOnlyList<MemberInfo> members, DateTime nowUtc)
+    {
+        var timed = counted
+            .Where(c => c.Data.MatchStartUtc != null)
+            .Select(c => (Record: c, Start: c.Data.MatchStartUtc!.Value, End: c.Data.MatchStartUtc!.Value.AddSeconds(Math.Max(0, c.Data.DurationSeconds ?? 0))))
+            .OrderBy(x => x.Start)
+            .ToList();
+        if (timed.Count == 0) return null;
+
+        var first = 0;
+        var runningEnd = timed[0].End;
+        for (var i = 1; i < timed.Count; i++)
+        {
+            if (timed[i].Start - runningEnd > SessionGap)
+            {
+                first = i;
+                runningEnd = timed[i].End;
+            }
+            else if (timed[i].End > runningEnd)
+            {
+                runningEnd = timed[i].End;
+            }
+        }
+        var run = timed.Skip(first).ToList();
+        var end = run.Max(x => x.End);
+        var matchIds = run.Select(x => x.Record.Data.MatchId).ToHashSet(StringComparer.Ordinal);
+        var sharedInRun = inTotals.Where(s => matchIds.Contains(s.MatchId)).ToList();
+
+        return new SquadSessionDto
+        {
+            StartUtc = run[0].Start,
+            EndUtc = end,
+            Active = nowUtc - end <= SessionGap,
+            Chests = run.Sum(x => x.Record.Data.ChestsOpened),
+            Matches = matchIds.Count,
+            Treasures = run.Sum(x => x.Record.Data.Treasures?.Count ?? 0),
+            SharedMatches = sharedInRun.Count,
+            SharedChests = sharedInRun.Sum(s => s.ConfirmedChests),
+            Members = members
+                .Select(m => (m.UserId, Rows: run.Where(x => x.Record.UserId == m.UserId).ToList()))
+                .Where(x => x.Rows.Count > 0)
+                .Select(x => new SessionMemberDto(x.UserId, x.Rows.Sum(r => r.Record.Data.ChestsOpened), x.Rows.Count, x.Rows.Sum(r => r.Record.Data.Treasures?.Count ?? 0)))
+                .ToList(),
         };
     }
 
@@ -187,7 +263,7 @@ public static class SquadAggregator
                 Status = warnings.Count > 0 ? SharedMatchStatus.Ambiguous : missing.Count > 0 ? SharedMatchStatus.Partial : SharedMatchStatus.Complete,
                 ConfirmedChests = present.Sum(p => p.Data.ChestsOpened),
                 Contributions = present.Select(p => new SharedContributionDto(p.UserId, p.Data.PlayerId, p.Data.PlayerName, p.Data.ChestsOpened,
-                    p.Data.ChestsDestroyed, p.Data.AmmoBoxesOpened, p.Data.ParserVersion, p.ReceivedUtc, p.Data.PossiblyIncomplete)).ToList(),
+                    p.Data.ChestsDestroyed, p.Data.AmmoBoxesOpened, p.Data.ParserVersion, p.ReceivedUtc, p.Data.PossiblyIncomplete, p.Data.Treasures?.Count)).ToList(),
                 Missing = missing,
                 Warnings = warnings,
             };

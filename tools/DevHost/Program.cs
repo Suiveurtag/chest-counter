@@ -118,11 +118,13 @@ if (squadServer != null && !engine.Sync.Configured)
         var uploads = sharedMatches.Where(m => m.Players > i)
             // The last teammate has not uploaded the two most recent matches: they show as partial.
             .Where(m => !(i == 2 && sharedMatches.OrderByDescending(x => x.Start).Take(2).Any(x => x.Id == m.Id)))
-            .Select(m => new ContributionDto
+            .Select(m => (Match: m, Chests: rng.Next(5, 58)))
+            .Select(x => new ContributionDto
             {
-                MatchId = m.Id, PlayerId = mates[i].Item2, PlayerName = mates[i].Item1, ChestsOpened = rng.Next(5, 58), AmmoBoxesOpened = rng.Next(1, 12),
-                MatchStartUtc = m.Start, DurationSeconds = 1200, Playlist = m.Playlist, ParserVersion = 17,
+                MatchId = x.Match.Id, PlayerId = mates[i].Item2, PlayerName = mates[i].Item1, ChestsOpened = x.Chests, AmmoBoxesOpened = rng.Next(1, 12),
+                MatchStartUtc = x.Match.Start, DurationSeconds = 1200, Playlist = x.Match.Playlist, ParserVersion = 17,
                 Roster = new() { new RosterEntry(Me, "Nova", false, rng.Next(0, 6)) },
+                Treasures = LocalDb.TreasuresForUpload(RollTreasures(rng, x.Match.Start, x.Chests * 3, 1200)),
             })
             .Concat(Enumerable.Range(0, 25 + i * 9).Select(k => new ContributionDto
             {

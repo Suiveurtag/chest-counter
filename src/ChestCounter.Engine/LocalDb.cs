@@ -499,15 +499,21 @@ public sealed class LocalDb : IDisposable
         {
             foreach (var m in Matches(new MatchFilter(Counted: true, Limit: int.MaxValue)).Where(m => m.PlayerId != null))
             {
-                Enqueue(Contribution(m, GetMatchDetail(m.MatchId)?.Roster ?? new()), nowUtc);
+                var detail = GetMatchDetail(m.MatchId);
+                Enqueue(Contribution(m, detail?.Roster ?? new(), detail?.Treasures), nowUtc);
                 count++;
             }
         });
         return count;
     }
 
-    public static ContributionDto Contribution(MatchRow m, List<RosterEntry> roster) => new()
+    /// <summary>The player's own treasures as sent to the squad. Team finds are estimates and are never sent.</summary>
+    public static List<TreasureDto> TreasuresForUpload(IEnumerable<TreasureInfo>? own) =>
+        (own ?? Enumerable.Empty<TreasureInfo>()).Select(t => new TreasureDto(t.PrizeId, t.RawItem, t.TimeSeconds, t.FromGoldenChest)).ToList();
+
+    public static ContributionDto Contribution(MatchRow m, List<RosterEntry> roster, List<TreasureInfo>? treasures = null) => new()
     {
+        Treasures = treasures == null ? null : TreasuresForUpload(treasures),
         MatchId = m.MatchId,
         PlayerId = m.PlayerId!,
         PlayerName = m.PlayerName ?? "",

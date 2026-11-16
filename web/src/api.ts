@@ -43,11 +43,11 @@ export interface OverlaySettings {
   enabled: boolean; locked: boolean; opacity: number; scale: number; x?: number; y?: number; showPersonal: boolean;
   showSquad: boolean; showSession: boolean; showLastMatch: boolean; showMembers: boolean; squadScope: 'combined' | 'shared';
   toggleHotkey: string; lockHotkey: string;
-  theme: 'aurora' | 'rift'; layout: 'row' | 'column' | 'compact'; items: OverlayItem[]; showIcons: boolean; showStatus: boolean;
+  theme: 'aurora' | 'rift'; layout: 'row' | 'column' | 'compact'; align?: 'left' | 'center' | 'right'; items: OverlayItem[]; showIcons: boolean; showStatus: boolean;
   showResult: boolean; resultSeconds: number;
 }
-export type OverlayItem = 'personal' | 'squad' | 'squadShared' | 'session' | 'last' | 'treasures' | 'teamTreasures';
-export const OVERLAY_ITEMS: OverlayItem[] = ['personal', 'squad', 'squadShared', 'session', 'last', 'treasures', 'teamTreasures'];
+export type OverlayItem = 'personal' | 'squad' | 'squadShared' | 'session' | 'squadSession' | 'last' | 'treasures' | 'teamTreasures';
+export const OVERLAY_ITEMS: OverlayItem[] = ['personal', 'squad', 'squadShared', 'session', 'squadSession', 'last', 'treasures', 'teamTreasures'];
 export interface AppSettings {
   demosFolder: string; demosFolderIsDefault: boolean; profile?: string; language: 'en' | 'fr'; timeFormat: 'auto' | '12' | '24';
   onboardingDone: boolean; minimizeToTray: boolean; startMinimized: boolean; launchWithWindows: boolean; launchWithFortnite: boolean;
@@ -70,8 +70,17 @@ export interface Member {
   userId: string; displayName: string; role: string; online: boolean; joinedUtc: string; lastSyncUtc?: string; lastSeenUtc?: string;
   accounts: Account[]; lifetimeChests: number; lifetimeMatches: number; sharedChests: number;
   lastMatch?: { matchId: string; startUtc?: string; chests: number };
+  bestMatch?: { matchId: string; startUtc?: string; chests: number };
+  /** Absent from servers older than treasure sync. */
+  lifetimeTreasures?: number; sharedTreasures?: number; treasuresUnknownMatches?: number;
 }
-export interface SharedContribution { userId: string; playerId: string; playerName: string; chests: number; chestsDestroyed: number; ammoBoxes: number; parserVersion: number; receivedUtc: string; possiblyIncomplete: boolean }
+export interface SharedContribution { userId: string; playerId: string; playerName: string; chests: number; chestsDestroyed: number; ammoBoxes: number; parserVersion: number; receivedUtc: string; possiblyIncomplete: boolean; treasures?: number }
+export interface SquadSession {
+  startUtc: string; endUtc: string; active: boolean; chests: number; matches: number; treasures: number; sharedMatches: number; sharedChests: number;
+  members: { userId: string; chests: number; matches: number; treasures: number }[];
+}
+/** A squad member's treasure, named by the engine. */
+export interface SquadFind { userId: string; matchId: string; matchStartUtc?: string; tag: TreasureTag; shared: boolean }
 export interface MissingContribution { userId: string; playerId: string; name: string; observedEstimate?: number }
 export interface SharedMatch {
   matchId: string; startUtc?: string; playlist?: string; durationSeconds?: number; status: 'complete' | 'partial' | 'ambiguous';
@@ -82,11 +91,13 @@ export interface Squad {
   squadId: string; name: string; revision: number; serverTimeUtc: string; maxMembers: number; members: Member[];
   combinedMemberChests: number; sharedChests: number; sharedMatchCount: number; partialMatchCount: number; ambiguousMatchCount: number;
   sharedMatches: SharedMatch[]; invites: Invite[];
+  combinedTreasures?: number; sharedTreasures?: number; session?: SquadSession;
 }
 export interface AppState {
   version: string; parserVersion: number; dataDir: string; settings: AppSettings; tracking: TrackingStatus; import: ImportStatus;
   recording: { state: 'likely_on' | 'likely_off' | 'no_folder' | 'no_replays' | 'stale' | 'unknown'; detail?: string };
   profile?: Profile; profiles: Profile[]; totals: Totals; recent: MatchSummary[]; sync: SyncStatus; squad?: Squad;
+  squadFinds?: SquadFind[];
 }
 export interface TimelinePoint { date: string; chests: number; matches: number; ammoBoxes: number }
 export interface MatchDetail {

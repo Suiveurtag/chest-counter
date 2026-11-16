@@ -75,9 +75,22 @@ result**, one row per `(matchId, playerId)`:
   was there has not uploaded yet; shown with `+`), or *ambiguous* (conflicting information about who played; left
   out of totals).
 
+- *Treasures*: each upload carries the uploader's own treasures (raw prize id and item; the clients name them with
+  their catalogue). Combined and together follow the same rules as chests. Treasures deduced for teammates
+  (`TeamTreasureInfo`) are estimates and are never uploaded. An upload without the field (`null`, an older client)
+  is "unknown", not zero: the interface says how many such matches there are.
+- *Session*: the members' latest run of matches with no break longer than `SessionGap` (2 h) between the end of one
+  and the start of the next, solo games included. It is *active* while its last match ended less than 2 h ago. This
+  is the squad's own definition, computed on the server; the local session counter (since the app started) stays
+  personal.
+
 Roster entries a replay records about teammates are used only to decide who played together, and as a labelled
 hint ("teammates' replays saw about N"). They never enter a total, because a replay only sees what happened near
 its recorder.
+
+New fields are added as optional fields: `Wire.ProtocolVersion` stays 1, older servers ignore what they do not know,
+older clients omit it. When the client starts sending a new field it bumps `sync.payload` (`Sync.cs`), so its history
+is uploaded once more with it (an upsert per `(match, player)`: nothing is counted twice).
 
 A player id belongs to the first member who uploads it. A member who has never uploaded is not yet detectable as
 "missing" from a match.

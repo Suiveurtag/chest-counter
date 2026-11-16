@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Crown, Link2, LogOut, Pencil, Plus, UserMinus, WifiOff } from 'lucide-react';
-import { api, type Squad } from '../api';
+import { api, type Squad, type SquadFind } from '../api';
 import { useLocale } from '../i18n';
-import { Count, Legend, SplitBar, useAction } from '../parts';
+import { Count, Legend, SplitBar, useAction, type Segment } from '../parts';
+import { Stars, Thumb, TreasureLabel } from '../hunt';
 import { memberSegments } from './Home';
 import type { PageProps } from '../App';
 
@@ -75,6 +76,72 @@ function SquadSetup({ state }: PageProps) {
   );
 }
 
+/** The squad's latest play session, in the session colour: live while the last match ended less than 2 h ago. */
+function SessionBand({ squad, me }: { squad: Squad; me?: string }) {
+  const { t, n, time, ago } = useLocale();
+  const s = squad.session!;
+  const segments: Segment[] = memberSegments(squad, me, (id) => s.members.find((m) => m.userId === id)?.chests, t('squad.you'))
+    .filter((seg) => seg.value > 0);
+  return (
+    <section className={`session-band${s.active ? ' live' : ''}`} title={t('squad.session.hint')}>
+      <div className="sb-head">
+        <span className="sb-title">{s.active && <i className="sb-dot" aria-hidden="true" />}{t(s.active ? 'squad.session.live' : 'squad.session.over')}</span>
+        <span className="mute small">{s.active ? t('squad.session.since', { time: time(s.startUtc) }) : t('squad.session.ended', { time: ago(s.endUtc) })}</span>
+      </div>
+      <div className="sb-body">
+        <div className="sb-total"><Count value={s.chests} /></div>
+        <div className="sb-facts">
+          <span>{t('squad.session.matches', { n: n(s.matches) })}</span>
+          {s.sharedMatches > 0 && <span className="t1">{t('squad.session.together', { n: n(s.sharedChests) })}</span>}
+          {s.treasures > 0 && <span className="t3"><Stars golden={false} /> {t('squad.session.treasures', { n: n(s.treasures) })}</span>}
+        </div>
+        {segments.length > 0 && (
+          <div className="sb-split"><SplitBar segments={segments} thin /><Legend segments={segments} /></div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** The members' latest treasures, with their picture, who found it and whether it was a match played together. */
+function FindsPanel({ finds, squad, colorOf }: { finds: SquadFind[]; squad: Squad; colorOf: (userId: string) => number }) {
+  const { t, date } = useLocale();
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? finds : finds.slice(0, 8);
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>{t('squad.finds')}</h2></div>
+      {finds.length === 0
+        ? <div className="empty"><strong>{t('squad.findsEmpty')}</strong><span>{t('squad.findsEmptyHint')}</span></div>
+        : (
+          <div className="finds">
+            {shown.map((f, i) => {
+              const who = squad.members.find((m) => m.userId === f.userId)?.displayName ?? '';
+              return (
+                <div className={`find${f.tag.golden ? ' golden' : ''}`} key={`${f.matchId}-${f.userId}-${i}`} style={{ animationDelay: `${Math.min(i, 8) * 0.04}s` }}>
+                  <Thumb src={f.tag.prizeKey ? `/treasure-img/${encodeURIComponent(f.tag.prizeKey)}` : undefined} />
+                  <div className="find-text">
+                    <TreasureLabel tag={f.tag} t={t} />
+                    <div className="small">
+                      <span className={`t${colorOf(f.userId)}`}>{who}</span>
+                      <span className="mute"> · {date(f.matchStartUtc)}</span>
+                      {f.shared && <span className="tag together">{t('squad.findTogether')}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      {!showAll && finds.length > 8 && (
+        <div className="actions" style={{ marginTop: 10 }}>
+          <button className="btn quiet" onClick={() => setShowAll(true)}>{t('common.showAll', { n: finds.length })}</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SquadView({ state, squad }: PageProps & { squad: Squad }) {
   const { t, n, ago, date, time, playlist } = useLocale();
   const [showAll, setShowAll] = useState(false);
@@ -105,6 +172,9 @@ function SquadView({ state, squad }: PageProps & { squad: Squad }) {
   const lifetime = memberSegments(squad, me, (id) => squad.members.find((m) => m.userId === id)?.lifetimeChests, t('squad.you'));
   const shared = memberSegments(squad, me, (id) => squad.members.find((m) => m.userId === id)?.sharedChests, t('squad.you'));
   const free = Math.max(0, squad.maxMembers - squad.members.length);
+  const unknownTreasures = squad.members.reduce((sum, m) => sum + (m.treasuresUnknownMatches ?? 0), 0);
+  const liveSession = squad.session?.active ? squad.session : undefined;
+  const sessionOf = (userId: string) => liveSession?.members.find((x) => x.userId === userId && x.chests > 0);
 
   return (
     <div className="page">
@@ -131,7 +201,9 @@ function SquadView({ state, squad }: PageProps & { squad: Squad }) {
         </div>
       )}
 
-      <section className="duo">
+      {squad.session && <SessionBand squad={squad} me={me} />}
+
+      <section className={`duo${squad.combinedTreasures !== undefined ? ' trio' : ''}`}>
         <div>
           <div className="k">{t('squad.combined')}</div>
           <div className="v"><Count value={squad.combinedMemberChests} /></div>
@@ -142,6 +214,14 @@ function SquadView({ state, squad }: PageProps & { squad: Squad }) {
           <div className="v"><Count value={squad.sharedChests} /></div>
           <p>{t('squad.togetherHint', { n: squad.sharedMatchCount })}</p>
         </div>
+        {squad.combinedTreasures !== undefined && (
+          <div className="treasure-col">
+            <div className="k"><Stars golden={false} /> {t('squad.treasures')}</div>
+            <div className="v"><Count value={squad.combinedTreasures} /></div>
+            <p>{t('squad.treasuresHint', { n: squad.sharedTreasures ?? 0 })}</p>
+            {unknownTreasures > 0 && <p className="mute small">{t('squad.treasuresUnknown', { n: unknownTreasures })}</p>}
+          </div>
+        )}
       </section>
 
       <section>
@@ -163,7 +243,18 @@ function SquadView({ state, squad }: PageProps & { squad: Squad }) {
                 </div>
                 <div className="big"><Count value={m.lifetimeChests} /></div>
                 <div className="meta">{t('squad.lifetime')}, {n(m.sharedChests)} {t('squad.withSquad')}</div>
-                {m.lastMatch && <div className="meta">{t('squad.lastMatch', { n: n(m.lastMatch.chests) })}</div>}
+                {m.lastMatch && (
+                  <div className="meta">
+                    {t('squad.lastMatch', { n: n(m.lastMatch.chests) })}
+                    {m.bestMatch && m.bestMatch.chests > m.lastMatch.chests && <span className="mute"> · {t('squad.best', { n: n(m.bestMatch.chests) })}</span>}
+                  </div>
+                )}
+                {(m.lifetimeTreasures !== undefined || sessionOf(m.userId)) && (
+                  <div className="chips">
+                    {m.lifetimeTreasures !== undefined && m.lifetimeTreasures > 0 && <span className="chip violet"><Stars golden={false} />{t('squad.memberTreasures', { n: n(m.lifetimeTreasures) })}</span>}
+                    {sessionOf(m.userId) && <span className="chip pink">{t('squad.session.tonight', { n: n(sessionOf(m.userId)!.chests) })}</span>}
+                  </div>
+                )}
                 <div className="foot">{m.lastSyncUtc ? t('squad.lastSync', { time: ago(m.lastSyncUtc) }) : t('squad.neverSynced')}</div>
               </div>
             );
@@ -184,6 +275,8 @@ function SquadView({ state, squad }: PageProps & { squad: Squad }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><SplitBar segments={shared} /><Legend segments={shared} /></div>
         </div>
       </section>
+
+      {state.squadFinds && squad.combinedTreasures !== undefined && <FindsPanel finds={state.squadFinds} squad={squad} colorOf={colorOf} />}
 
       <section className="panel">
         <div className="panel-head"><h2>{t('squad.history')}</h2></div>

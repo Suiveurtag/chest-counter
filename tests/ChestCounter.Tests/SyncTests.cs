@@ -71,6 +71,43 @@ public sealed class SyncTests : IDisposable
         Assert.Equal(52, engine.Sync.Squad!.CombinedMemberChests);
     }
 
+    [Fact]
+    public async Task Own_treasures_are_uploaded_and_teammate_estimates_are_not()
+    {
+        var box = NewSandbox();
+        using var engine = box.Engine(_server.NewTransport());
+        engine.Begin();
+        await engine.Sync.ConnectServerAsync(Server, "Ana");
+        await engine.Sync.CreateSquadAsync("Loot Goblins");
+
+        (Ana("m1", 30) with
+        {
+            Treasures = new() { new TreasureInfo("prize-1", "Item_A", 120, "chest", true, true), new TreasureInfo(null, "Item_B", 300, "chest", false, true) },
+            TeamFinds = new() { new TeamTreasureInfo("prize-2", "Item_C", 200, "Ben", false) },
+        }).Write(box.Demos, "m1");
+        engine.Tracker.ScanOnce(ignoreQuietPeriod: true);
+        await engine.Sync.ReconcileAsync();
+
+        var squad = engine.Sync.Squad!;
+        Assert.Equal(2, squad.CombinedTreasures);
+        Assert.Equal(new[] { "Item_B", "Item_A" }, squad.RecentTreasures.Select(t => t.RawItem).ToArray()); // latest find first
+        Assert.Equal(0, squad.Members.Single().TreasuresUnknownMatches);
+        var finds = engine.GetState().SquadFinds!;
+        Assert.Equal(2, finds.Count);
+        Assert.True(finds.Single(f => f.Tag.Golden).Tag.Golden);
+
+        // The overlay's squad session: the chests while the session goes on, 0 once it is over.
+        box.Clock.UtcNow = new DateTime(2026, 11, 1, 21, 0, 0, DateTimeKind.Utc); // the match started at 20:00
+        Assert.Equal(30, engine.GetOverlay().SquadSession);
+        box.Clock.UtcNow = new DateTime(2026, 11, 2, 12, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(0, engine.GetOverlay().SquadSession);
+
+        // A full resync sends them again without counting them twice.
+        engine.Sync.ResyncAll();
+        await engine.Sync.ReconcileAsync();
+        Assert.Equal(2, engine.Sync.Squad!.CombinedTreasures);
+    }
+
     [Fact] // requirement 9, hands off: the background loops do it by themselves
     public async Task Background_sync_recovers_by_itself_when_the_server_comes_back()
     {
