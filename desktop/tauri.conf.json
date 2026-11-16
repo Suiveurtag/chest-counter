@@ -1,8 +1,8 @@
-{
+﻿{
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Chest Counter Squad",
   "mainBinaryName": "ChestCounterSquad",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "identifier": "app.chestcounter.squad",
   "build": {
     "frontendDist": "ui"

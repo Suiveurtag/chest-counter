@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "chest-counter-squad"
-version = "1.0.0"
+version = "2.0.0"
 description = "Counts the chests you open in Fortnite Battle Royale, and adds up your squad's."
 license = "MIT"
 edition = "2021"
